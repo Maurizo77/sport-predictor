@@ -5,7 +5,7 @@ import streamlit as st
 
 from team_names import full
 
-DEVELOPER = "MAURIZO"
+DEVELOPER = "ENGR MAURIZO"
 APP_NAME = "Sports Predictor"
 
 BASE = os.path.dirname(os.path.abspath(__file__))
