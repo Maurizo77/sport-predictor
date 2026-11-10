@@ -57,5 +57,5 @@ with tab_results:
         st.info("No checked results yet.")
 
 st.divider()
-st.caption("© 2026 " + DEVELOPER + ". All rights reserved.")
+st.caption("© 2026 " + maurizo + ". All rights reserved.")
 st.caption("Data: NBA stats via the nba_api package. Predictions are statistical estimates, not guarantees.")
