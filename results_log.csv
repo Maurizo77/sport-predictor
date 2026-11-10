@@ -12,3 +12,4 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,PRED_TOTAL,REAL_TOTAL
 2026-11-09,0022600207,Indiana Pacers @ Dallas Mavericks,Dallas Mavericks,Dallas Mavericks,True,223.7,247
 2026-11-09,0022600208,Denver Nuggets @ Houston Rockets,Houston Rockets,Houston Rockets,True,225.5,210
 2026-11-09,0022600209,San Antonio Spurs @ Phoenix Suns,San Antonio Spurs,San Antonio Spurs,True,226.9,218
+2026-11-09,0022600210,New Orleans Pelicans @ Golden State Warriors,Golden State Warriors,Golden State Warriors,True,236.9,225
