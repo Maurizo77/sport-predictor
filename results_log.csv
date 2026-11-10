@@ -5,3 +5,10 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,PRED_TOTAL,REAL_TOTAL
 2026-11-08,0022600200,Boston Celtics @ Milwaukee Bucks,Boston Celtics,Boston Celtics,True,227.0,214
 2026-11-08,0022600201,New Orleans Pelicans @ LA Clippers,LA Clippers,LA Clippers,True,234.2,262
 2026-11-08,0022600202,Miami Heat @ Sacramento Kings,Miami Heat,Miami Heat,True,237.1,222
+2026-11-09,0022600203,Los Angeles Lakers @ Atlanta Hawks,Atlanta Hawks,Los Angeles Lakers,False,234.0,238
+2026-11-09,0022600204,Cleveland Cavaliers @ Charlotte Hornets,Cleveland Cavaliers,Charlotte Hornets,False,219.6,236
+2026-11-09,0022600205,Washington Wizards @ Detroit Pistons,Detroit Pistons,Detroit Pistons,True,219.2,233
+2026-11-09,0022600206,Memphis Grizzlies @ Toronto Raptors,Toronto Raptors,Memphis Grizzlies,False,232.2,220
+2026-11-09,0022600207,Indiana Pacers @ Dallas Mavericks,Dallas Mavericks,Dallas Mavericks,True,223.7,247
+2026-11-09,0022600208,Denver Nuggets @ Houston Rockets,Houston Rockets,Houston Rockets,True,225.5,210
+2026-11-09,0022600209,San Antonio Spurs @ Phoenix Suns,San Antonio Spurs,San Antonio Spurs,True,226.9,218
