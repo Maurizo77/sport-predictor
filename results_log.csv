@@ -13,3 +13,9 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,PRED_TOTAL,REAL_TOTAL
 2026-11-09,0022600208,Denver Nuggets @ Houston Rockets,Houston Rockets,Houston Rockets,True,225.5,210
 2026-11-09,0022600209,San Antonio Spurs @ Phoenix Suns,San Antonio Spurs,San Antonio Spurs,True,226.9,218
 2026-11-09,0022600210,New Orleans Pelicans @ Golden State Warriors,Golden State Warriors,Golden State Warriors,True,236.9,225
+2026-11-10,0022600211,Milwaukee Bucks @ New York Knicks,New York Knicks,New York Knicks,True,221.1,202
+2026-11-10,0022600212,Boston Celtics @ Philadelphia 76ers,Boston Celtics,Boston Celtics,True,220.3,224
+2026-11-10,0022600213,LA Clippers @ Phoenix Suns,Phoenix Suns,Phoenix Suns,True,228.9,243
+2026-11-10,0022600214,Miami Heat @ Utah Jazz,Miami Heat,Miami Heat,True,231.6,224
+2026-11-10,0022600215,Orlando Magic @ Sacramento Kings,Orlando Magic,Orlando Magic,True,228.0,207
+2026-11-10,0022600216,Oklahoma City Thunder @ Portland Trail Blazers,Portland Trail Blazers,Portland Trail Blazers,True,226.2,226
