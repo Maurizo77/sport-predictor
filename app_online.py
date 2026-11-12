@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import streamlit as st
 
+from results_view import show_results
 from team_names import full
 
 DEVELOPER = "ENGR Maurizo"
@@ -52,25 +53,7 @@ def basketball_view():
             st.info("No predictions saved yet.")
 
     with tab_results:
-        results_path = os.path.join(BASE, "results_log.csv")
-        if os.path.exists(results_path):
-            res = pd.read_csv(results_path, dtype={"GAME_ID": str})
-            res["Result"] = res["CORRECT"].map({True: "✔", False: "✘"})
-            res["Total error"] = (res["PRED_TOTAL"] - res["REAL_TOTAL"]).abs().round(1)
-
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Games checked", len(res))
-            c2.metric("Correct", int(res["CORRECT"].sum()))
-            c3.metric("Accuracy", str(round(res["CORRECT"].mean() * 100)) + "%")
-            st.metric("Average total error (points)", round(res["Total error"].mean(), 1))
-
-            st.dataframe(
-                res[["DATE", "GAME", "PICK", "WINNER", "Result",
-                     "PRED_TOTAL", "REAL_TOTAL", "Total error"]],
-                hide_index=True,
-            )
-        else:
-            st.info("No checked results yet.")
+        show_results(BASE)
 
 
 def best_result(row):
