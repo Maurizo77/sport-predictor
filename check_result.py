@@ -35,6 +35,7 @@ for _, row in log.iterrows():
     winner = row["HOME"] if home_row.iloc[0]["WL"] == "W" else row["AWAY"]
     real_total = home_row.iloc[0]["PTS"] + away_row.iloc[0]["PTS"]
     is_correct = row["PICK"] == winner
+    confidence = max(row["HOME_WIN_PROB"], 1 - row["HOME_WIN_PROB"])
     finished += 1
     if is_correct:
         correct += 1
@@ -48,6 +49,7 @@ for _, row in log.iterrows():
         "PICK": full(row["PICK"]),
         "WINNER": full(winner),
         "CORRECT": is_correct,
+        "CONFIDENCE": round(confidence, 3),
         "PRED_TOTAL": row["PRED_TOTAL"],
         "REAL_TOTAL": real_total,
     })
