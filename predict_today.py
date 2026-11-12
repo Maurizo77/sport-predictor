@@ -1,4 +1,5 @@
 import os
+
 import pandas as pd
 from nba_api.live.nba.endpoints import scoreboard
 from sklearn.linear_model import LinearRegression, LogisticRegression
@@ -40,14 +41,29 @@ add_features(0, "_NOW")
 stats = ["FORM_WIN", "FORM_MARGIN", "LONG_MARGIN", "AVG_PTS", "AVG_PTS_AGAINST", "AVG_POSS"]
 cols = stats + ["REST_DAYS"]
 
-home_rows = data[data["IS_HOME"]][["GAME_ID", "WIN", "PTS"] + cols]
-away_rows = data[~data["IS_HOME"]][["GAME_ID", "PTS"] + cols]
-games = home_rows.merge(away_rows, on="GAME_ID", suffixes=("_HOME", "_AWAY")).dropna()
+home_rows = data[data["IS_HOME"]][["GAME_ID", "GAME_DATE", "TEAM_ID", "WIN", "PTS"] + cols]
+away_rows = data[~data["IS_HOME"]][["GAME_ID", "TEAM_ID", "PTS"] + cols]
+games = home_rows.merge(away_rows, on="GAME_ID", suffixes=("_HOME", "_AWAY"))
+games = games.sort_values("GAME_DATE")
+
+ratings = {}
+elo_diff = []
+for g in games.itertuples():
+    rating_home = ratings.get(g.TEAM_ID_HOME, 1500)
+    rating_away = ratings.get(g.TEAM_ID_AWAY, 1500)
+    elo_diff.append((rating_home - rating_away) / 100)
+    expected = 1 / (1 + 10 ** ((rating_away - rating_home - 100) / 400))
+    change = 20 * (g.WIN - expected)
+    ratings[g.TEAM_ID_HOME] = rating_home + change
+    ratings[g.TEAM_ID_AWAY] = rating_away - change
+games["ELO_DIFF"] = elo_diff
+
+games = games.dropna()
 games["TOTAL"] = games["PTS_HOME"] + games["PTS_AWAY"]
 
 win_names = ["FORM_WIN", "FORM_MARGIN", "LONG_MARGIN", "REST_DAYS"]
 total_names = ["AVG_PTS", "AVG_PTS_AGAINST", "AVG_POSS", "REST_DAYS"]
-win_features = [n + s for n in win_names for s in ["_HOME", "_AWAY"]]
+win_features = [n + s for n in win_names for s in ["_HOME", "_AWAY"]] + ["ELO_DIFF"]
 total_features = [n + s for n in total_names for s in ["_HOME", "_AWAY"]]
 
 win_model = LogisticRegression(max_iter=1000)
@@ -77,6 +93,9 @@ for game in board["games"]:
         row[c + "_AWAY"] = a[c + "_NOW"]
     row["REST_DAYS_HOME"] = min((today - h["GAME_DATE"]).days, 7)
     row["REST_DAYS_AWAY"] = min((today - a["GAME_DATE"]).days, 7)
+    row["ELO_DIFF"] = (
+        ratings.get(h["TEAM_ID"], 1500) - ratings.get(a["TEAM_ID"], 1500)
+    ) / 100
     rows.append(row)
 
 if not rows:
