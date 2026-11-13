@@ -29,3 +29,7 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-11,0022600224,Orlando Magic @ Utah Jazz,Orlando Magic,Orlando Magic,True,0.672,225.0,231
 2026-11-11,0022600225,Golden State Warriors @ Houston Rockets,Houston Rockets,Houston Rockets,True,0.688,225.0,223
 2026-11-11,0022600226,Oklahoma City Thunder @ Portland Trail Blazers,Portland Trail Blazers,Portland Trail Blazers,True,0.503,226.5,226
+2026-11-12,0022600227,Toronto Raptors @ Philadelphia 76ers,Philadelphia 76ers,Philadelphia 76ers,True,0.52,214.9,235
+2026-11-12,0022600228,Detroit Pistons @ Washington Wizards,Detroit Pistons,Detroit Pistons,True,0.864,219.2,284
+2026-11-12,0022600229,Dallas Mavericks @ Minnesota Timberwolves,Minnesota Timberwolves,Minnesota Timberwolves,True,0.752,224.8,227
+2026-11-12,0022600230,Charlotte Hornets @ Phoenix Suns,Phoenix Suns,Phoenix Suns,True,0.608,219.4,197
