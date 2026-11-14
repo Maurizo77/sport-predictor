@@ -1,0 +1,35 @@
+DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
+2026-11-08,0022600197,Los Angeles Lakers @ Detroit Pistons,Detroit Pistons,Los Angeles Lakers,False,0.695,226.5,237
+2026-11-08,0022600198,Utah Jazz @ Minnesota Timberwolves,Minnesota Timberwolves,Minnesota Timberwolves,True,0.84,226.9,215
+2026-11-08,0022600199,Brooklyn Nets @ Dallas Mavericks,Dallas Mavericks,Dallas Mavericks,True,0.693,226.3,223
+2026-11-08,0022600200,Boston Celtics @ Milwaukee Bucks,Boston Celtics,Boston Celtics,True,0.849,227.0,214
+2026-11-08,0022600201,New Orleans Pelicans @ LA Clippers,LA Clippers,LA Clippers,True,0.617,234.2,262
+2026-11-08,0022600202,Miami Heat @ Sacramento Kings,Miami Heat,Miami Heat,True,0.692,237.1,222
+2026-11-09,0022600203,Los Angeles Lakers @ Atlanta Hawks,Atlanta Hawks,Los Angeles Lakers,False,0.613,234.0,238
+2026-11-09,0022600204,Cleveland Cavaliers @ Charlotte Hornets,Cleveland Cavaliers,Charlotte Hornets,False,0.52,219.6,236
+2026-11-09,0022600205,Washington Wizards @ Detroit Pistons,Detroit Pistons,Detroit Pistons,True,0.881,219.2,233
+2026-11-09,0022600206,Memphis Grizzlies @ Toronto Raptors,Toronto Raptors,Memphis Grizzlies,False,0.814,232.2,220
+2026-11-09,0022600207,Indiana Pacers @ Dallas Mavericks,Dallas Mavericks,Dallas Mavericks,True,0.57,223.7,247
+2026-11-09,0022600208,Denver Nuggets @ Houston Rockets,Houston Rockets,Houston Rockets,True,0.619,225.5,210
+2026-11-09,0022600209,San Antonio Spurs @ Phoenix Suns,San Antonio Spurs,San Antonio Spurs,True,0.689,226.9,218
+2026-11-09,0022600210,New Orleans Pelicans @ Golden State Warriors,Golden State Warriors,Golden State Warriors,True,0.587,236.9,225
+2026-11-10,0022600211,Milwaukee Bucks @ New York Knicks,New York Knicks,New York Knicks,True,0.888,221.1,202
+2026-11-10,0022600212,Boston Celtics @ Philadelphia 76ers,Boston Celtics,Boston Celtics,True,0.607,220.3,224
+2026-11-10,0022600213,LA Clippers @ Phoenix Suns,Phoenix Suns,Phoenix Suns,True,0.506,228.9,243
+2026-11-10,0022600214,Miami Heat @ Utah Jazz,Miami Heat,Miami Heat,True,0.659,231.6,224
+2026-11-10,0022600215,Orlando Magic @ Sacramento Kings,Orlando Magic,Orlando Magic,True,0.643,228.0,207
+2026-11-10,0022600216,Oklahoma City Thunder @ Portland Trail Blazers,Portland Trail Blazers,Portland Trail Blazers,True,0.508,226.2,226
+2026-11-11,0022600217,Washington Wizards @ Indiana Pacers,Indiana Pacers,Indiana Pacers,True,0.639,222.3,215
+2026-11-11,0022600218,Cleveland Cavaliers @ New York Knicks,New York Knicks,Cleveland Cavaliers,False,0.64,214.5,222
+2026-11-11,0022600219,Boston Celtics @ Toronto Raptors,Toronto Raptors,Boston Celtics,False,0.507,213.3,191
+2026-11-11,0022600220,San Antonio Spurs @ Chicago Bulls,San Antonio Spurs,San Antonio Spurs,True,0.884,237.9,243
+2026-11-11,0022600221,Denver Nuggets @ Memphis Grizzlies,Denver Nuggets,Denver Nuggets,True,0.694,227.5,241
+2026-11-11,0022600222,Los Angeles Lakers @ Milwaukee Bucks,Los Angeles Lakers,Los Angeles Lakers,True,0.844,222.9,235
+2026-11-11,0022600223,Brooklyn Nets @ New Orleans Pelicans,New Orleans Pelicans,Brooklyn Nets,False,0.683,231.9,256
+2026-11-11,0022600224,Orlando Magic @ Utah Jazz,Orlando Magic,Orlando Magic,True,0.672,225.0,231
+2026-11-11,0022600225,Golden State Warriors @ Houston Rockets,Houston Rockets,Houston Rockets,True,0.688,225.0,223
+2026-11-11,0022600226,Oklahoma City Thunder @ Portland Trail Blazers,Portland Trail Blazers,Portland Trail Blazers,True,0.503,226.5,226
+2026-11-12,0022600227,Toronto Raptors @ Philadelphia 76ers,Philadelphia 76ers,Philadelphia 76ers,True,0.52,214.9,235
+2026-11-12,0022600228,Detroit Pistons @ Washington Wizards,Detroit Pistons,Detroit Pistons,True,0.864,219.2,284
+2026-11-12,0022600229,Dallas Mavericks @ Minnesota Timberwolves,Minnesota Timberwolves,Minnesota Timberwolves,True,0.752,224.8,227
+2026-11-12,0022600230,Charlotte Hornets @ Phoenix Suns,Phoenix Suns,Phoenix Suns,True,0.608,219.4,197
