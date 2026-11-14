@@ -39,3 +39,6 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-13,0022600037,Atlanta Hawks @ Chicago Bulls,Atlanta Hawks,Chicago Bulls,False,0.753,242.9,242
 2026-11-13,0022600038,Memphis Grizzlies @ New Orleans Pelicans,New Orleans Pelicans,Memphis Grizzlies,False,0.512,235.9,253
 2026-11-13,0022600039,Utah Jazz @ Houston Rockets,Houston Rockets,Houston Rockets,True,0.88,223.0,243
+2026-11-13,0022600040,Golden State Warriors @ San Antonio Spurs,San Antonio Spurs,San Antonio Spurs,True,0.779,229.1,208
+2026-11-13,0022600041,Portland Trail Blazers @ Sacramento Kings,Portland Trail Blazers,Portland Trail Blazers,True,0.809,233.9,227
+2026-11-13,0022600042,Oklahoma City Thunder @ LA Clippers,Oklahoma City Thunder,LA Clippers,False,0.725,225.0,225
