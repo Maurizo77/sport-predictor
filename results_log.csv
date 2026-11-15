@@ -44,3 +44,6 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-13,0022600042,Oklahoma City Thunder @ LA Clippers,Oklahoma City Thunder,LA Clippers,False,0.725,225.0,225
 2026-11-14,0022600231,Denver Nuggets @ New Orleans Pelicans,Denver Nuggets,Denver Nuggets,True,0.791,232.6,224
 2026-11-14,0022600232,Dallas Mavericks @ Cleveland Cavaliers,Cleveland Cavaliers,Cleveland Cavaliers,True,0.714,226.6,244
+2026-11-14,0022600233,Detroit Pistons @ Miami Heat,Detroit Pistons,Miami Heat,False,0.689,230.2,254
+2026-11-14,0022600234,Brooklyn Nets @ Memphis Grizzlies,Memphis Grizzlies,Memphis Grizzlies,True,0.597,229.8,239
+2026-11-14,0022600235,Chicago Bulls @ Minnesota Timberwolves,Minnesota Timberwolves,Chicago Bulls,False,0.876,234.5,223
