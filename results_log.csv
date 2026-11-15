@@ -42,3 +42,5 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-13,0022600040,Golden State Warriors @ San Antonio Spurs,San Antonio Spurs,San Antonio Spurs,True,0.779,229.1,208
 2026-11-13,0022600041,Portland Trail Blazers @ Sacramento Kings,Portland Trail Blazers,Portland Trail Blazers,True,0.809,233.9,227
 2026-11-13,0022600042,Oklahoma City Thunder @ LA Clippers,Oklahoma City Thunder,LA Clippers,False,0.725,225.0,225
+2026-11-14,0022600231,Denver Nuggets @ New Orleans Pelicans,Denver Nuggets,Denver Nuggets,True,0.791,232.6,224
+2026-11-14,0022600232,Dallas Mavericks @ Cleveland Cavaliers,Cleveland Cavaliers,Cleveland Cavaliers,True,0.714,226.6,244
