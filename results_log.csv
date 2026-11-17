@@ -55,3 +55,11 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-15,0022600242,Houston Rockets @ Washington Wizards,Houston Rockets,Houston Rockets,True,0.84,222.0,266
 2026-11-15,0022600243,Atlanta Hawks @ Milwaukee Bucks,Atlanta Hawks,Atlanta Hawks,True,0.756,228.8,219
 2026-11-15,0022600244,Oklahoma City Thunder @ Sacramento Kings,Oklahoma City Thunder,Oklahoma City Thunder,True,0.844,226.2,228
+2026-11-16,0022600245,Orlando Magic @ Boston Celtics,Boston Celtics,Orlando Magic,False,0.805,216.4,220
+2026-11-16,0022600246,Chicago Bulls @ Cleveland Cavaliers,Cleveland Cavaliers,Cleveland Cavaliers,True,0.812,235.1,241
+2026-11-16,0022600247,Memphis Grizzlies @ Washington Wizards,Memphis Grizzlies,Memphis Grizzlies,True,0.719,231.1,256
+2026-11-16,0022600248,Philadelphia 76ers @ Brooklyn Nets,Philadelphia 76ers,Philadelphia 76ers,True,0.732,224.8,258
+2026-11-16,0022600249,Houston Rockets @ Miami Heat,Houston Rockets,Miami Heat,False,0.624,231.6,238
+2026-11-16,0022600250,Portland Trail Blazers @ Minnesota Timberwolves,Minnesota Timberwolves,Minnesota Timberwolves,True,0.579,229.8,204
+2026-11-16,0022600251,Golden State Warriors @ New Orleans Pelicans,Golden State Warriors,New Orleans Pelicans,False,0.715,235.0,209
+2026-11-16,0022600252,Phoenix Suns @ Denver Nuggets,Denver Nuggets,Phoenix Suns,False,0.728,229.7,222
