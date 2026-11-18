@@ -63,3 +63,7 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-16,0022600250,Portland Trail Blazers @ Minnesota Timberwolves,Minnesota Timberwolves,Minnesota Timberwolves,True,0.579,229.8,204
 2026-11-16,0022600251,Golden State Warriors @ New Orleans Pelicans,Golden State Warriors,New Orleans Pelicans,False,0.715,235.0,209
 2026-11-16,0022600252,Phoenix Suns @ Denver Nuggets,Denver Nuggets,Phoenix Suns,False,0.728,229.7,222
+2026-11-17,0022600253,New York Knicks @ Toronto Raptors,New York Knicks,New York Knicks,True,0.549,222.2,213
+2026-11-17,0022600254,Portland Trail Blazers @ Minnesota Timberwolves,Minnesota Timberwolves,Minnesota Timberwolves,True,0.636,224.4,211
+2026-11-17,0022600255,Detroit Pistons @ San Antonio Spurs,San Antonio Spurs,Detroit Pistons,False,0.694,223.7,198
+2026-11-17,0022600257,Utah Jazz @ LA Clippers,LA Clippers,Utah Jazz,False,0.786,225.3,239
