@@ -67,3 +67,4 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-17,0022600254,Portland Trail Blazers @ Minnesota Timberwolves,Minnesota Timberwolves,Minnesota Timberwolves,True,0.636,224.4,211
 2026-11-17,0022600255,Detroit Pistons @ San Antonio Spurs,San Antonio Spurs,Detroit Pistons,False,0.694,223.7,198
 2026-11-17,0022600257,Utah Jazz @ LA Clippers,LA Clippers,Utah Jazz,False,0.786,225.3,239
+2026-11-17,0022600256,Charlotte Hornets @ Los Angeles Lakers,Los Angeles Lakers,Los Angeles Lakers,True,0.777,219.6,232
