@@ -68,3 +68,14 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-17,0022600255,Detroit Pistons @ San Antonio Spurs,San Antonio Spurs,Detroit Pistons,False,0.694,223.7,198
 2026-11-17,0022600257,Utah Jazz @ LA Clippers,LA Clippers,Utah Jazz,False,0.786,225.3,239
 2026-11-17,0022600256,Charlotte Hornets @ Los Angeles Lakers,Los Angeles Lakers,Los Angeles Lakers,True,0.777,219.6,232
+2026-11-18,0022600258,Memphis Grizzlies @ Cleveland Cavaliers,Cleveland Cavaliers,Memphis Grizzlies,False,0.7,235.1,245
+2026-11-18,0022600259,Houston Rockets @ Indiana Pacers,Houston Rockets,Houston Rockets,True,0.728,224.0,223
+2026-11-18,0022600260,Milwaukee Bucks @ Miami Heat,Miami Heat,Miami Heat,True,0.765,230.1,267
+2026-11-18,0022600261,Philadelphia 76ers @ Orlando Magic,Philadelphia 76ers,Philadelphia 76ers,True,0.524,222.9,237
+2026-11-18,0022600262,Chicago Bulls @ Brooklyn Nets,Chicago Bulls,Chicago Bulls,True,0.519,233.2,244
+2026-11-18,0022600263,Washington Wizards @ Toronto Raptors,Toronto Raptors,Washington Wizards,False,0.799,228.1,202
+2026-11-18,0022600264,Detroit Pistons @ New Orleans Pelicans,Detroit Pistons,Detroit Pistons,True,0.774,230.5,231
+2026-11-18,0022600265,Atlanta Hawks @ Oklahoma City Thunder,Oklahoma City Thunder,Atlanta Hawks,False,0.746,229.9,229
+2026-11-18,0022600267,Golden State Warriors @ Dallas Mavericks,Golden State Warriors,Dallas Mavericks,False,0.551,225.2,210
+2026-11-18,0022600266,Boston Celtics @ Denver Nuggets,Boston Celtics,Denver Nuggets,False,0.558,218.9,206
+2026-11-18,0022600269,Phoenix Suns @ Sacramento Kings,Phoenix Suns,Phoenix Suns,True,0.712,228.0,235
