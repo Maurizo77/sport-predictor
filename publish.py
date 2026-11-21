@@ -25,6 +25,7 @@ FILES = [
     ".gitignore",
     "start_app.bat.txt.bat",
     "research/README.md",
+    "research/backtests/compare_football_models.py",
     "requirements.txt",
     "predictions_log.csv",
     "results_log.csv",
