@@ -95,17 +95,14 @@ test = data[(data["Date"] >= TRAIN_BEFORE) & (data["Date"] < TEST_BEFORE)].copy(
 if train.empty or test.empty:
     raise SystemExit("The selected chronological train/test period has no training or test rows.")
 
-print(f"Training before {TRAIN_BEFORE}; testing {TEST_BEFORE[:4]} season through {TEST_BEFORE}")
+print(f"Training before {TRAIN_BEFORE}; testing {TRAIN_BEFORE} through {TEST_BEFORE}")
 print(f"Training games: {len(train)} | test games: {len(test)}")
 
 poisson_home = PoissonRegressor(alpha=0.0001, max_iter=1000).fit(train[FEATURES], train["FTHG"])
 poisson_away = PoissonRegressor(alpha=0.0001, max_iter=1000).fit(train[FEATURES], train["FTAG"])
-report(
-    "Current PoissonRegressor",
-    test,
-    poisson_home.predict(test[FEATURES]),
-    poisson_away.predict(test[FEATURES]),
-)
+poisson_home_prediction = poisson_home.predict(test[FEATURES])
+poisson_away_prediction = poisson_away.predict(test[FEATURES])
+report("Current PoissonRegressor", test, poisson_home_prediction, poisson_away_prediction)
 
 boosted_home = HistGradientBoostingRegressor(
     loss="poisson", learning_rate=0.08, max_iter=150, max_leaf_nodes=15,
@@ -115,9 +112,31 @@ boosted_away = HistGradientBoostingRegressor(
     loss="poisson", learning_rate=0.08, max_iter=150, max_leaf_nodes=15,
     l2_regularization=2.0, random_state=42,
 ).fit(train[FEATURES], train["FTAG"])
-report(
-    "HistGradientBoosting Poisson challenger",
-    test,
-    boosted_home.predict(test[FEATURES]),
-    boosted_away.predict(test[FEATURES]),
-)
+boosted_home_prediction = boosted_home.predict(test[FEATURES])
+boosted_away_prediction = boosted_away.predict(test[FEATURES])
+report("HistGradientBoosting Poisson challenger", test, boosted_home_prediction, boosted_away_prediction)
+
+if {"B365A", "B365D", "B365H"}.issubset(test.columns):
+    odds = test[["B365A", "B365D", "B365H"]].to_numpy(dtype=float)
+    has_odds = np.isfinite(odds).all(axis=1) & (odds > 0).all(axis=1)
+    if has_odds.any():
+        implied = 1 / odds[has_odds]
+        implied /= implied.sum(axis=1, keepdims=True)
+        print(
+            f"Bookmaker odds: {has_odds.sum()} matched games; "
+            f"outcome accuracy {accuracy_score(test.loc[has_odds, 'FTR'], np.array(LABELS)[implied.argmax(axis=1)]):.3f}; "
+            f"outcome log loss {log_loss(test.loc[has_odds, 'FTR'], implied, labels=LABELS):.3f}"
+        )
+        print("Models on the same bookmaker-covered games:")
+        report(
+            "  Current PoissonRegressor",
+            test.loc[has_odds],
+            poisson_home_prediction[has_odds],
+            poisson_away_prediction[has_odds],
+        )
+        report(
+            "  HistGradientBoosting challenger",
+            test.loc[has_odds],
+            boosted_home_prediction[has_odds],
+            boosted_away_prediction[has_odds],
+        )
