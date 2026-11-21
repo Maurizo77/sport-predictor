@@ -31,6 +31,10 @@ def show_results(base):
         return
 
     res = pd.read_csv(results_path, dtype={"GAME_ID": str})
+    res["_SORT_DATE"] = pd.to_datetime(res["DATE"], errors="coerce")
+    res = res.sort_values("_SORT_DATE", ascending=False, na_position="last").drop(
+        columns="_SORT_DATE"
+    )
     res["Result"] = res["CORRECT"].map({True: "✔", False: "✘"})
     res["Total error"] = (res["PRED_TOTAL"] - res["REAL_TOTAL"]).abs().round(1)
 
@@ -53,4 +57,5 @@ def show_results(base):
 
     columns += ["PRED_TOTAL", "REAL_TOTAL", "Total error"]
     st.subheader("All checked games")
+    st.caption("Newest results first.")
     st.dataframe(res[columns], hide_index=True)
