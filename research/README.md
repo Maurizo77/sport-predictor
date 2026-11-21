@@ -10,5 +10,6 @@ python research/diagnostics/today_games.py
 The scripts read the root-level CSV files. They are kept out of the main project folder so the dashboard and its data-update workflow are easier to find.
 
 - `backtests/`: NBA and football model experiments, backtests, and total-points analysis.
+- `backtests/compare_football_models.py`: read-only chronological comparison of the production Poisson model with a scikit-learn boosted Poisson challenger. It prints held-out goal and outcome metrics without touching prediction logs.
 - `diagnostics/`: feature inspection, NBA scoreboard inspection, and a one-season NBA data download utility.
 - `legacy/ake_pool_file_duplicate.py`: duplicate copy of the supported root-level `make_pool_file.py`; retained for reference and not part of the normal workflow.
