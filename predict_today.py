@@ -1,4 +1,5 @@
 import os
+import time
 
 import pandas as pd
 from nba_api.live.nba.endpoints import scoreboard
@@ -91,6 +92,7 @@ def train_models():
     }
 
 
+pipeline_started = time.perf_counter()
 trained = load_model_cache(CACHE_NAME, DATA_FILE, CACHE_VERSION)
 if trained is None:
     print("Training NBA models from game history...")
@@ -98,6 +100,7 @@ if trained is None:
     save_model_cache(CACHE_NAME, DATA_FILE, CACHE_VERSION, trained)
 else:
     print("Loaded cached NBA models; game history has not changed.")
+print("Model pipeline time:", round(time.perf_counter() - pipeline_started, 2), "seconds")
 
 stats = trained["stats"]
 win_features = trained["win_features"]
