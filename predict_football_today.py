@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 
 import numpy as np
 import pandas as pd
@@ -15,91 +16,106 @@ LOG_FILE = "football_predictions_log.csv"
 MANUAL_FILE = "my_fixtures.csv"
 FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"
 DAYS_AHEAD = 14
-CACHE_NAME = "football_predictors.joblib"
-CACHE_VERSION = 1
+CACHE_NAME = "football_training.joblib"
+CACHE_VERSION = 2
 
 data_path = os.path.join(BASE, "football_games.csv")
-matches = pd.read_csv(data_path)
-matches["Date"] = pd.to_datetime(matches["Date"], dayfirst=True, format="mixed")
-matches = matches.dropna(subset=["FTHG", "FTAG"])
-matches = matches.sort_values("Date").reset_index(drop=True)
-matches["MATCH_ID"] = matches.index
 
 
-def margin_factor(goal_diff):
-    if goal_diff <= 1:
-        return 1.0
-    if goal_diff == 2:
-        return 1.5
-    return (11 + goal_diff) / 8
+def train_pipeline():
+    matches = pd.read_csv(data_path)
+    matches["Date"] = pd.to_datetime(matches["Date"], dayfirst=True, format="mixed")
+    matches = matches.dropna(subset=["FTHG", "FTAG"])
+    matches = matches.sort_values("Date").reset_index(drop=True)
+    matches["MATCH_ID"] = matches.index
 
+    def margin_factor(goal_diff):
+        if goal_diff <= 1:
+            return 1.0
+        if goal_diff == 2:
+            return 1.5
+        return (11 + goal_diff) / 8
 
-ratings = {}
-elo_diff = []
-for row in matches.itertuples():
-    rating_home = ratings.get(row.HomeTeam, 1500)
-    rating_away = ratings.get(row.AwayTeam, 1500)
-    elo_diff.append((rating_home - rating_away) / 100)
-    expected = 1 / (1 + 10 ** ((rating_away - rating_home - 70) / 400))
-    if row.FTHG > row.FTAG:
-        result = 1.0
-    elif row.FTHG == row.FTAG:
-        result = 0.5
-    else:
-        result = 0.0
-    change = 20 * margin_factor(abs(row.FTHG - row.FTAG)) * (result - expected)
-    ratings[row.HomeTeam] = rating_home + change
-    ratings[row.AwayTeam] = rating_away - change
-matches["ELO_DIFF"] = elo_diff
+    ratings = {}
+    elo_diff = []
+    for row in matches.itertuples():
+        rating_home = ratings.get(row.HomeTeam, 1500)
+        rating_away = ratings.get(row.AwayTeam, 1500)
+        elo_diff.append((rating_home - rating_away) / 100)
+        expected = 1 / (1 + 10 ** ((rating_away - rating_home - 70) / 400))
+        if row.FTHG > row.FTAG:
+            result = 1.0
+        elif row.FTHG == row.FTAG:
+            result = 0.5
+        else:
+            result = 0.0
+        change = 20 * margin_factor(abs(row.FTHG - row.FTAG)) * (result - expected)
+        ratings[row.HomeTeam] = rating_home + change
+        ratings[row.AwayTeam] = rating_away - change
+    matches["ELO_DIFF"] = elo_diff
 
-stats = ["GF", "GA", "SF", "SA"]
-home = matches[["MATCH_ID", "Date", "HomeTeam", "FTHG", "FTAG", "HST", "AST"]]
-home.columns = ["MATCH_ID", "Date", "TEAM", "GF", "GA", "SF", "SA"]
-away = matches[["MATCH_ID", "Date", "AwayTeam", "FTAG", "FTHG", "AST", "HST"]]
-away.columns = ["MATCH_ID", "Date", "TEAM", "GF", "GA", "SF", "SA"]
+    stats = ["GF", "GA", "SF", "SA"]
+    home = matches[["MATCH_ID", "Date", "HomeTeam", "FTHG", "FTAG", "HST", "AST"]]
+    home.columns = ["MATCH_ID", "Date", "TEAM", "GF", "GA", "SF", "SA"]
+    away = matches[["MATCH_ID", "Date", "AwayTeam", "FTAG", "FTHG", "AST", "HST"]]
+    away.columns = ["MATCH_ID", "Date", "TEAM", "GF", "GA", "SF", "SA"]
 
-teams = pd.concat([home, away]).sort_values(["TEAM", "Date"])
-for col in stats:
-    teams[col + "_AVG"] = teams.groupby("TEAM")[col].transform(
-        lambda s: s.shift(1).rolling(10, min_periods=5).mean()
+    teams = pd.concat([home, away]).sort_values(["TEAM", "Date"])
+    for col in stats:
+        teams[col + "_AVG"] = teams.groupby("TEAM")[col].transform(
+            lambda series: series.shift(1).rolling(10, min_periods=5).mean()
+        )
+
+    form_cols = [col + "_AVG" for col in stats]
+    home_form = teams[["MATCH_ID", "TEAM"] + form_cols].rename(
+        columns={"TEAM": "HomeTeam", **{col + "_AVG": "H_" + col for col in stats}}
     )
+    away_form = teams[["MATCH_ID", "TEAM"] + form_cols].rename(
+        columns={"TEAM": "AwayTeam", **{col + "_AVG": "A_" + col for col in stats}}
+    )
+    matches = matches.merge(home_form, on=["MATCH_ID", "HomeTeam"])
+    matches = matches.merge(away_form, on=["MATCH_ID", "AwayTeam"])
 
-form_cols = [c + "_AVG" for c in stats]
-home_form = teams[["MATCH_ID", "TEAM"] + form_cols].rename(
-    columns={"TEAM": "HomeTeam", **{c + "_AVG": "H_" + c for c in stats}}
-)
-away_form = teams[["MATCH_ID", "TEAM"] + form_cols].rename(
-    columns={"TEAM": "AwayTeam", **{c + "_AVG": "A_" + c for c in stats}}
-)
-matches = matches.merge(home_form, on=["MATCH_ID", "HomeTeam"])
-matches = matches.merge(away_form, on=["MATCH_ID", "AwayTeam"])
-
-features = ["H_" + c for c in stats] + ["A_" + c for c in stats] + ["ELO_DIFF"]
-train = matches.dropna(subset=features + ["FTHG", "FTAG"])
-
-cached_models = load_model_cache(CACHE_NAME, data_path, CACHE_VERSION)
-if cached_models is None:
-    print("Training football goal models...")
+    features = ["H_" + col for col in stats] + ["A_" + col for col in stats] + ["ELO_DIFF"]
+    train = matches.dropna(subset=features + ["FTHG", "FTAG"])
     home_model = PoissonRegressor(alpha=0.0001, max_iter=1000)
     home_model.fit(train[features], train["FTHG"])
     away_model = PoissonRegressor(alpha=0.0001, max_iter=1000)
     away_model.fit(train[features], train["FTAG"])
-    save_model_cache(
-        CACHE_NAME,
-        data_path,
-        CACHE_VERSION,
-        {"home_model": home_model, "away_model": away_model},
-    )
+
+    recent = teams.groupby("TEAM").tail(10)
+    latest_form = recent.groupby("TEAM")[stats].mean()
+    latest_form = latest_form[recent.groupby("TEAM").size() >= 5]
+    return {
+        "history_end": matches["Date"].max().date().isoformat(),
+        "league_codes": matches["LEAGUE"].unique().tolist(),
+        "stats": stats,
+        "features": features,
+        "ratings": ratings,
+        "latest_form": latest_form,
+        "home_model": home_model,
+        "away_model": away_model,
+    }
+
+
+pipeline_started = time.perf_counter()
+trained = load_model_cache(CACHE_NAME, data_path, CACHE_VERSION)
+if trained is None:
+    print("Preparing and training football models from match history...")
+    trained = train_pipeline()
+    save_model_cache(CACHE_NAME, data_path, CACHE_VERSION, trained)
 else:
-    home_model = cached_models["home_model"]
-    away_model = cached_models["away_model"]
-    print("Loaded cached football goal models; match history has not changed.")
+    print("Loaded cached football training pipeline; match history has not changed.")
+print("Training pipeline time:", round(time.perf_counter() - pipeline_started, 2), "seconds")
 
-recent = teams.groupby("TEAM").tail(10)
-latest_form = recent.groupby("TEAM")[stats].mean()
-latest_form = latest_form[recent.groupby("TEAM").size() >= 5]
+stats = trained["stats"]
+features = trained["features"]
+ratings = trained["ratings"]
+latest_form = trained["latest_form"]
+home_model = trained["home_model"]
+away_model = trained["away_model"]
 
-print("History up to:", matches["Date"].max().date())
+print("History up to:", trained["history_end"])
 
 source = MANUAL_FILE if os.path.exists(MANUAL_FILE) else FIXTURES_URL
 print("Fixtures from:", source)
@@ -126,7 +142,7 @@ today = pd.Timestamp.today().normalize()
 fixtures = fixtures[
     (fixtures["Date"] >= today)
     & (fixtures["Date"] <= today + pd.Timedelta(days=DAYS_AHEAD))
-    & (fixtures["Div"].isin(matches["LEAGUE"].unique()))
+    & (fixtures["Div"].isin(trained["league_codes"]))
 ]
 if fixtures.empty:
     print("No fixtures in the next", DAYS_AHEAD, "days for our leagues.")
