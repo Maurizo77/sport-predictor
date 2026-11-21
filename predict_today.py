@@ -1,4 +1,5 @@
 import os
+import tempfile
 import time
 
 import pandas as pd
@@ -6,6 +7,7 @@ from nba_api.live.nba.endpoints import scoreboard
 from sklearn.linear_model import LinearRegression, LogisticRegression
 
 from model_cache import load_model_cache, save_model_cache
+from event_time import TIME_UNAVAILABLE, nba_event_time_wat
 from team_names import full
 
 
@@ -123,7 +125,12 @@ for game in board["games"]:
         continue
     h = latest.loc[home]
     a = latest.loc[away]
-    row = {"GAME_ID": game["gameId"], "HOME": home, "AWAY": away}
+    row = {
+        "GAME_ID": game["gameId"],
+        "HOME": home,
+        "AWAY": away,
+        "EVENT_TIME_WAT": nba_event_time_wat(game.get("gameTimeUTC")),
+    }
     for column in stats:
         row[column + "_HOME"] = h[column + "_NOW"]
         row[column + "_AWAY"] = a[column + "_NOW"]
@@ -157,14 +164,31 @@ for _, row in predictions.iterrows():
     print(
         full(row["AWAY"]), "@", full(row["HOME"]), "->", full(row["PICK"]),
         str(round(confidence * 100)) + "%", "| total", row["PRED_TOTAL"],
+        "| event time", row["EVENT_TIME_WAT"],
     )
 
 log = predictions[
-    ["GAME_ID", "HOME", "AWAY", "PICK", "HOME_WIN_PROB", "PRED_TOTAL"]
+    ["GAME_ID", "HOME", "AWAY", "PICK", "HOME_WIN_PROB", "PRED_TOTAL", "EVENT_TIME_WAT"]
 ].copy()
 log.insert(0, "DATE", board["gameDate"])
 if os.path.exists(LOG_FILE):
     old = pd.read_csv(LOG_FILE, dtype={"GAME_ID": str})
     log = log[~log["GAME_ID"].isin(old["GAME_ID"])]
-log.to_csv(LOG_FILE, mode="a", header=not os.path.exists(LOG_FILE), index=False)
+    if "EVENT_TIME_WAT" not in old:
+        old["EVENT_TIME_WAT"] = TIME_UNAVAILABLE
+    columns = list(dict.fromkeys(list(old.columns) + list(log.columns)))
+    combined = pd.concat([old, log], ignore_index=True).reindex(columns=columns)
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", newline="", dir=os.path.dirname(LOG_FILE),
+        suffix=".tmp", delete=False,
+    ) as temporary:
+        temporary_path = temporary.name
+    try:
+        combined.to_csv(temporary_path, index=False)
+        os.replace(temporary_path, LOG_FILE)
+    finally:
+        if os.path.exists(temporary_path):
+            os.remove(temporary_path)
+else:
+    log.to_csv(LOG_FILE, index=False)
 print("Saved", len(log), "new predictions to", LOG_FILE)
