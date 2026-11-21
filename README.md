@@ -31,6 +31,10 @@ The first data refresh and predictions require an internet connection. NBA predi
 
 The NBA predictor stores its trained models and prepared team state in `.cache/`. The football predictor stores its trained models, Elo ratings, and latest team form there. The cache is local, ignored by Git, and refreshed automatically when the corresponding history CSV changes. Prediction output includes the time spent preparing or loading the cached training pipeline.
 
+## Match times
+
+Both prediction screens show event times in Nigerian time (WAT, Africa/Lagos). NBA start times are converted from the scoreboard's UTC timestamp. Football fixture-feed times are treated as UK local time and converted with daylight-saving rules; a manual `my_fixtures.csv` can include an optional `TimeZone` column with an IANA zone name if its `Time` values use another local timezone. Missing or unparseable times display as `Time unavailable`. Older saved predictions remain visible and show that label until new predictions are generated.
+
 ## Data and generated files
 
 - `nba_games.csv`, `football_games.csv`: model history used for predictions.
@@ -50,6 +54,7 @@ The CSV history and logs are local project data. They are intentionally not excl
 | `football_predictions_view.py` | Shared, compact football predictions table used by both dashboards |
 | `predict_today.py`, `predict_football_today.py` | Train and save current NBA and football predictions |
 | `model_cache.py` | Reuse trained models while the source game history stays unchanged |
+| `event_time.py` | Convert NBA and football kickoff times to Nigerian time |
 | `check_result.py` | Fetch NBA outcomes and update the results log |
 | `get_all_seasons.py`, `get_football_data.py` | Refresh NBA and football history |
 | `injuries.py` | Refresh the NBA injury report |
