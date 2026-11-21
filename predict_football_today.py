@@ -6,14 +6,20 @@ import pandas as pd
 from scipy.stats import poisson
 from sklearn.linear_model import PoissonRegressor
 
+from model_cache import load_model_cache, save_model_cache
+
 sys.stdout.reconfigure(encoding="utf-8")
 
+BASE = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = "football_predictions_log.csv"
 MANUAL_FILE = "my_fixtures.csv"
 FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"
 DAYS_AHEAD = 14
+CACHE_NAME = "football_predictors.joblib"
+CACHE_VERSION = 1
 
-matches = pd.read_csv("football_games.csv")
+data_path = os.path.join(BASE, "football_games.csv")
+matches = pd.read_csv(data_path)
 matches["Date"] = pd.to_datetime(matches["Date"], dayfirst=True, format="mixed")
 matches = matches.dropna(subset=["FTHG", "FTAG"])
 matches = matches.sort_values("Date").reset_index(drop=True)
@@ -71,10 +77,23 @@ matches = matches.merge(away_form, on=["MATCH_ID", "AwayTeam"])
 features = ["H_" + c for c in stats] + ["A_" + c for c in stats] + ["ELO_DIFF"]
 train = matches.dropna(subset=features + ["FTHG", "FTAG"])
 
-home_model = PoissonRegressor(alpha=0.0001, max_iter=1000)
-home_model.fit(train[features], train["FTHG"])
-away_model = PoissonRegressor(alpha=0.0001, max_iter=1000)
-away_model.fit(train[features], train["FTAG"])
+cached_models = load_model_cache(CACHE_NAME, data_path, CACHE_VERSION)
+if cached_models is None:
+    print("Training football goal models...")
+    home_model = PoissonRegressor(alpha=0.0001, max_iter=1000)
+    home_model.fit(train[features], train["FTHG"])
+    away_model = PoissonRegressor(alpha=0.0001, max_iter=1000)
+    away_model.fit(train[features], train["FTAG"])
+    save_model_cache(
+        CACHE_NAME,
+        data_path,
+        CACHE_VERSION,
+        {"home_model": home_model, "away_model": away_model},
+    )
+else:
+    home_model = cached_models["home_model"]
+    away_model = cached_models["away_model"]
+    print("Loaded cached football goal models; match history has not changed.")
 
 recent = teams.groupby("TEAM").tail(10)
 latest_form = recent.groupby("TEAM")[stats].mean()
