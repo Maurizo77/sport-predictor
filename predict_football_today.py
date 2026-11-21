@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import time
 
 import numpy as np
@@ -8,11 +9,16 @@ from scipy.stats import poisson
 from sklearn.linear_model import PoissonRegressor
 
 from model_cache import load_model_cache, save_model_cache
+from event_time import (
+    FOOTBALL_FEED_TIMEZONE,
+    TIME_UNAVAILABLE,
+    football_event_time_wat,
+)
 
 sys.stdout.reconfigure(encoding="utf-8")
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-LOG_FILE = "football_predictions_log.csv"
+LOG_FILE = os.path.join(BASE, "football_predictions_log.csv")
 MANUAL_FILE = "my_fixtures.csv"
 FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"
 DAYS_AHEAD = 14
@@ -135,10 +141,12 @@ if missing:
     raise SystemExit
 
 fixtures = fixtures.dropna(subset=["HomeTeam", "AwayTeam"])
+if "Time" not in fixtures.columns:
+    fixtures["Time"] = None
 fixtures["Date"] = pd.to_datetime(
     fixtures["Date"], dayfirst=True, format="mixed", errors="coerce"
 )
-today = pd.Timestamp.today().normalize()
+today = pd.Timestamp.now(tz=FOOTBALL_FEED_TIMEZONE).normalize().tz_localize(None)
 fixtures = fixtures[
     (fixtures["Date"] >= today)
     & (fixtures["Date"] <= today + pd.Timedelta(days=DAYS_AHEAD))
@@ -153,7 +161,17 @@ for fx in fixtures.itertuples():
     if fx.HomeTeam not in latest_form.index or fx.AwayTeam not in latest_form.index:
         print("Skipping", fx.HomeTeam, "vs", fx.AwayTeam, "(team name not found in our data)")
         continue
-    row = {"DATE": fx.Date.date(), "LEAGUE": fx.Div, "HOME": fx.HomeTeam, "AWAY": fx.AwayTeam}
+    row = {
+        "DATE": fx.Date.date(),
+        "LEAGUE": fx.Div,
+        "HOME": fx.HomeTeam,
+        "AWAY": fx.AwayTeam,
+        "EVENT_TIME_WAT": football_event_time_wat(
+            fx.Date,
+            fx.Time,
+            getattr(fx, "TimeZone", FOOTBALL_FEED_TIMEZONE),
+        ),
+    }
     for c in stats:
         row["H_" + c] = latest_form.loc[fx.HomeTeam, c]
         row["A_" + c] = latest_form.loc[fx.AwayTeam, c]
@@ -209,7 +227,7 @@ for k in range(len(X)):
     best = flat.argsort()[::-1][:3]
     top_scores = ", ".join(str(b // 11) + "-" + str(b % 11) + " " + pct(flat[b]) for b in best)
     print()
-    print(r["LEAGUE"], r["DATE"], "|", game)
+    print(r["LEAGUE"], r["DATE"], "| kickoff", r["EVENT_TIME_WAT"], "|", game)
     print("  Win/draw/loss: " + pct(p_home[k]) + " / " + pct(p_draw[k]) + " / " + pct(p_away[k]))
     print("  Double chance 1X / X2 / 12: " + pct(p_home[k] + p_draw[k]) + " / "
           + pct(p_draw[k] + p_away[k]) + " / " + pct(p_home[k] + p_away[k]))
@@ -238,7 +256,8 @@ for prob, game, name in picks[:10]:
     print(" ", pct(prob), game, "->", name, "| fair odds", round(1 / prob, 2))
 
 log = pd.DataFrame({
-    "DATE": X["DATE"], "LEAGUE": X["LEAGUE"], "HOME": X["HOME"], "AWAY": X["AWAY"],
+    "DATE": X["DATE"], "EVENT_TIME_WAT": X["EVENT_TIME_WAT"],
+    "LEAGUE": X["LEAGUE"], "HOME": X["HOME"], "AWAY": X["AWAY"],
     "P_HOME": p_home.round(3), "P_DRAW": p_draw.round(3), "P_AWAY": p_away.round(3),
     "P_OVER25": p_o25.round(3), "P_BTTS": p_btts.round(3),
     "EXP_HOME_GOALS": lam_home.round(2), "EXP_AWAY_GOALS": lam_away.round(2),
@@ -248,6 +267,21 @@ if os.path.exists(LOG_FILE):
     old_keys = old["DATE"].astype(str) + old["HOME"] + old["AWAY"]
     new_keys = log["DATE"].astype(str) + log["HOME"] + log["AWAY"]
     log = log[~new_keys.isin(old_keys)]
-log.to_csv(LOG_FILE, mode="a", header=not os.path.exists(LOG_FILE), index=False)
+    if "EVENT_TIME_WAT" not in old:
+        old["EVENT_TIME_WAT"] = TIME_UNAVAILABLE
+    columns = list(dict.fromkeys(list(old.columns) + list(log.columns)))
+    combined = pd.concat([old, log], ignore_index=True).reindex(columns=columns)
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", newline="", dir=BASE, suffix=".tmp", delete=False
+    ) as temporary:
+        temporary_path = temporary.name
+    try:
+        combined.to_csv(temporary_path, index=False)
+        os.replace(temporary_path, LOG_FILE)
+    finally:
+        if os.path.exists(temporary_path):
+            os.remove(temporary_path)
+else:
+    log.to_csv(LOG_FILE, index=False)
 print()
 print("Saved", len(log), "new predictions to", LOG_FILE)
