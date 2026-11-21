@@ -21,6 +21,7 @@ FILES = [
     "team_names.py",
     "predict_today.py",
     "predict_football_today.py",
+    "get_football_data.py",
     "fetch_pool_fixtures.py",
     "refresh_pool.py",
     "make_pool_file.py",
