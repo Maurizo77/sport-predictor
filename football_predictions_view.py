@@ -3,6 +3,8 @@ import os
 import pandas as pd
 import streamlit as st
 
+from football_feedback import FEEDBACK_FILE, build_feedback, update_feedback_file
+
 
 LEAGUE_NAMES = {
     "E0": "England Premier League",
@@ -138,10 +140,132 @@ def show_football_predictions(base):
     view = view.sort_values("DATE", ascending=False).head(60).copy()
     view["DATE"] = view["DATE"].dt.strftime("%Y-%m-%d")
 
-    st.caption("1X2 shows home / draw / away probabilities. Model estimates, not guarantees.")
+    st.caption(
+        "1X2 shows home / draw / away probabilities. Where complete bookmaker prices "
+        "were available, the saved 1X2 outcome comes from their no-margin probabilities; "
+        "otherwise it comes from the model. Estimates, not guarantees."
+    )
+    display_columns = [
+        "DATE", "Kickoff (WAT)", "League", "Match", "Most likely", "1X2 %",
+        "Expected goals", "Over 2.5 %", "BTTS %",
+    ]
+    if "ODDS_SOURCE" in view.columns:
+        view["1X2 source"] = view["ODDS_SOURCE"].fillna("Model")
+        display_columns.append("1X2 source")
     st.dataframe(
-        view[["DATE", "Kickoff (WAT)", "League", "Match", "Most likely", "1X2 %", "Expected goals",
-              "Over 2.5 %", "BTTS %"]],
+        view[display_columns],
         hide_index=True,
         use_container_width=True,
     )
+
+
+def show_pool_draws(base):
+    path = os.path.join(base, "pool_picks.csv")
+    if not os.path.exists(path):
+        st.info("No pool draw picks saved yet. Run the pool draw predictor first.")
+        return
+
+    try:
+        pool = pd.read_csv(path)
+    except (OSError, pd.errors.EmptyDataError, pd.errors.ParserError) as error:
+        st.error(f"Could not read the pool draw picks: {error}")
+        return
+
+    required = {"DRAW_PICK", "HomeTeam", "AwayTeam", "MODEL", "SCORE", "LEAGUE"}
+    missing = sorted(required - set(pool.columns))
+    if missing:
+        st.error("The pool picks file is missing columns: " + ", ".join(missing))
+        return
+
+    draw_mask = pool["DRAW_PICK"].astype(str).str.lower().eq("true")
+    picks = pool[draw_mask].copy()
+    if picks.empty:
+        st.info("No pool draw picks found. Regenerate the pool predictions.")
+        return
+
+    picks["MODEL"] = pd.to_numeric(picks["MODEL"], errors="coerce")
+    picks["SCORE"] = pd.to_numeric(picks["SCORE"], errors="coerce")
+    picks = picks.dropna(subset=["MODEL", "SCORE"]).sort_values("SCORE", ascending=False)
+    picks["League"] = picks["LEAGUE"].map(LEAGUE_NAMES).fillna(picks["LEAGUE"])
+    picks["Match"] = picks["HomeTeam"].astype(str) + " vs " + picks["AwayTeam"].astype(str)
+    picks["Model draw chance"] = (picks["MODEL"] * 100).round(0).astype(int).astype(str) + "%"
+
+    st.subheader("Top pool draw picks")
+    st.caption(
+        "Ranked using the historical match model and bookmaker draw prices when available. "
+        "These are estimates, not guaranteed outcomes."
+    )
+    columns = ["League", "Match", "Model draw chance"]
+    if "BOOK" in picks.columns:
+        book = pd.to_numeric(picks["BOOK"], errors="coerce")
+        picks["Bookmaker draw chance"] = book.map(
+            lambda value: "—" if pd.isna(value) else str(int(round(value * 100))) + "%"
+        )
+        columns.append("Bookmaker draw chance")
+    st.dataframe(
+        picks[columns].head(2),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+
+def show_football_feedback(base):
+    feedback = build_feedback(base)
+    if not feedback.empty:
+        update_feedback_file(base)
+    else:
+        path = os.path.join(base, FEEDBACK_FILE)
+        if not os.path.exists(path):
+            st.info(
+                "No completed saved forecasts to review yet. Refresh football data "
+                "after matches finish to compare forecasts with actual results."
+            )
+            return
+        try:
+            feedback = pd.read_csv(path, parse_dates=["DATE"])
+        except (OSError, pd.errors.EmptyDataError, pd.errors.ParserError) as error:
+            st.error(f"Could not read the football feedback log: {error}")
+            return
+
+    if feedback.empty:
+        st.info(
+            "No completed saved forecasts to review yet. Refresh football data "
+            "after matches finish to compare forecasts with actual results."
+        )
+        return
+
+    st.subheader("How past football predictions performed")
+    st.caption(
+        "Scored only after actual results are present in the football history. "
+        "After the history changes, the next prediction run retrains on those real results; "
+        "the model never treats its own guesses as training data."
+    )
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Completed forecasts", len(feedback))
+    c2.metric("1X2 accuracy", str(round(feedback["CORRECT"].mean() * 100)) + "%")
+    c3.metric("Mean log loss", round(feedback["LOG_LOSS"].mean(), 3))
+    st.caption("Accuracy by league is only informative after a meaningful number of completed matches.")
+
+    league_names = feedback["LEAGUE"].map(LEAGUE_NAMES).fillna(feedback["LEAGUE"])
+    by_league = feedback.assign(League=league_names).groupby("League").agg(
+        Games=("CORRECT", "size"), Correct=("CORRECT", "sum"),
+        Accuracy=("CORRECT", "mean"), MeanLogLoss=("LOG_LOSS", "mean"),
+    ).reset_index()
+    by_league["Accuracy"] = (by_league["Accuracy"] * 100).round(0).astype(int).astype(str) + "%"
+    by_league["Mean log loss"] = by_league["MeanLogLoss"].round(3)
+    by_league = by_league.drop(columns="MeanLogLoss").sort_values("Games", ascending=False)
+    st.dataframe(by_league, hide_index=True, use_container_width=True)
+
+    recent = feedback.head(12).copy()
+    recent["Date"] = pd.to_datetime(recent["DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
+    recent["Match"] = recent["HOME"].astype(str) + " vs " + recent["AWAY"].astype(str)
+    recent["Actual score"] = recent["FTHG"].astype(int).astype(str) + "–" + recent["FTAG"].astype(int).astype(str)
+    recent["Outcome check"] = recent.apply(
+        lambda row: ("✓ " if row["CORRECT"] else "✗ ") + row["PREDICTED_OUTCOME"] + " / " + row["ACTUAL_OUTCOME"],
+        axis=1,
+    )
+    recent_columns = ["Date", "LEAGUE", "Match", "Outcome check", "Actual score"]
+    if "ODDS_SOURCE" in recent.columns:
+        recent_columns.append("ODDS_SOURCE")
+    st.caption("Most recent completed forecasts")
+    st.dataframe(recent[recent_columns], hide_index=True, use_container_width=True)
