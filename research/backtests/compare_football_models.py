@@ -77,15 +77,24 @@ def outcome_probabilities(home_goals, away_goals):
     return probabilities / probabilities.sum(axis=1, keepdims=True)
 
 
-def report(name, test, home_goals, away_goals):
-    probabilities = outcome_probabilities(home_goals, away_goals)
+def report_probabilities(name, test, probabilities, home_goals=None, away_goals=None):
     predictions = np.array(LABELS)[probabilities.argmax(axis=1)]
+    detail = ""
+    if home_goals is not None and away_goals is not None:
+        detail = (
+            f"home/away goals MAE "
+            f"{mean_absolute_error(test['FTHG'], home_goals):.3f}/"
+            f"{mean_absolute_error(test['FTAG'], away_goals):.3f}; "
+        )
     print(
-        f"{name}: home/away goals MAE "
-        f"{mean_absolute_error(test['FTHG'], home_goals):.3f}/"
-        f"{mean_absolute_error(test['FTAG'], away_goals):.3f}; "
-        f"outcome accuracy {accuracy_score(test['FTR'], predictions):.3f}; "
+        f"{name}: {detail}outcome accuracy {accuracy_score(test['FTR'], predictions):.3f}; "
         f"outcome log loss {log_loss(test['FTR'], probabilities, labels=LABELS):.3f}"
+    )
+
+
+def report(name, test, home_goals, away_goals):
+    report_probabilities(
+        name, test, outcome_probabilities(home_goals, away_goals), home_goals, away_goals
     )
 
 
@@ -102,7 +111,8 @@ poisson_home = PoissonRegressor(alpha=0.0001, max_iter=1000).fit(train[FEATURES]
 poisson_away = PoissonRegressor(alpha=0.0001, max_iter=1000).fit(train[FEATURES], train["FTAG"])
 poisson_home_prediction = poisson_home.predict(test[FEATURES])
 poisson_away_prediction = poisson_away.predict(test[FEATURES])
-report("Current PoissonRegressor", test, poisson_home_prediction, poisson_away_prediction)
+poisson_probabilities = outcome_probabilities(poisson_home_prediction, poisson_away_prediction)
+report_probabilities("Current PoissonRegressor", test, poisson_probabilities)
 
 boosted_home = HistGradientBoostingRegressor(
     loss="poisson", learning_rate=0.08, max_iter=150, max_leaf_nodes=15,
@@ -122,21 +132,14 @@ if {"B365A", "B365D", "B365H"}.issubset(test.columns):
     if has_odds.any():
         implied = 1 / odds[has_odds]
         implied /= implied.sum(axis=1, keepdims=True)
-        print(
-            f"Bookmaker odds: {has_odds.sum()} matched games; "
-            f"outcome accuracy {accuracy_score(test.loc[has_odds, 'FTR'], np.array(LABELS)[implied.argmax(axis=1)]):.3f}; "
-            f"outcome log loss {log_loss(test.loc[has_odds, 'FTR'], implied, labels=LABELS):.3f}"
-        )
-        print("Models on the same bookmaker-covered games:")
+        covered = test.loc[has_odds]
+        current_on_covered = poisson_probabilities[has_odds]
+        report_probabilities("Bookmaker odds", covered, implied)
+        report_probabilities("50/50 model + bookmaker", covered, (current_on_covered + implied) / 2)
+        report_probabilities("Current model, same games", covered, current_on_covered)
         report(
-            "  Current PoissonRegressor",
-            test.loc[has_odds],
-            poisson_home_prediction[has_odds],
-            poisson_away_prediction[has_odds],
-        )
-        report(
-            "  HistGradientBoosting challenger",
-            test.loc[has_odds],
+            "HistGradientBoosting, same games",
+            covered,
             boosted_home_prediction[has_odds],
             boosted_away_prediction[has_odds],
         )
