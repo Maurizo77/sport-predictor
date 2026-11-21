@@ -26,7 +26,19 @@ FIXTURE_CACHE = os.path.join(BASE, ".cache", "football_fixtures.csv")
 MAX_FIXTURE_CACHE_AGE_DAYS = 3
 DAYS_AHEAD = 14
 CACHE_NAME = "football_training.joblib"
-CACHE_VERSION = 2
+CACHE_VERSION = 4
+
+FORM_TARGETS = {
+    "GF": ("FTHG", "FTAG"), "GA": ("FTAG", "FTHG"),
+    "SF": ("HST", "AST"), "SA": ("AST", "HST"),
+    "SH": ("HS", "AS"), "SHA": ("AS", "HS"),
+    "CF": ("HC", "AC"), "CA": ("AC", "HC"),
+    "YF": ("HY", "AY"), "YA": ("AY", "HY"),
+    "RF": ("HR", "AR"), "RA": ("AR", "HR"),
+    "HTF": ("HTHG", "HTAG"), "HTA": ("HTAG", "HTHG"),
+    "FOULS_FOR": ("HF", "AF"), "FOULS_AGAINST": ("AF", "HF"),
+    "OFFSIDES_FOR": ("HO", "AO"), "OFFSIDES_AGAINST": ("AO", "HO"),
+}
 
 data_path = os.path.join(BASE, "football_games.csv")
 
@@ -63,11 +75,25 @@ def train_pipeline():
         ratings[row.AwayTeam] = rating_away - change
     matches["ELO_DIFF"] = elo_diff
 
-    stats = ["GF", "GA", "SF", "SA"]
-    home = matches[["MATCH_ID", "Date", "HomeTeam", "FTHG", "FTAG", "HST", "AST"]]
-    home.columns = ["MATCH_ID", "Date", "TEAM", "GF", "GA", "SF", "SA"]
-    away = matches[["MATCH_ID", "Date", "AwayTeam", "FTAG", "FTHG", "AST", "HST"]]
-    away.columns = ["MATCH_ID", "Date", "TEAM", "GF", "GA", "SF", "SA"]
+    stats = []
+    available_form_targets = {}
+    for form_stat, (home_target, away_target) in FORM_TARGETS.items():
+        if home_target not in matches.columns or away_target not in matches.columns:
+            continue
+        home_values = pd.to_numeric(matches[home_target], errors="coerce")
+        away_values = pd.to_numeric(matches[away_target], errors="coerce")
+        if min(home_values.notna().sum(), away_values.notna().sum()) < 500:
+            continue
+        stats.append(form_stat)
+        available_form_targets[form_stat] = (home_values, away_values)
+    if not stats:
+        raise ValueError("No historical match statistics are available for team form.")
+
+    home = matches[["MATCH_ID", "Date", "HomeTeam"]].rename(columns={"HomeTeam": "TEAM"}).copy()
+    away = matches[["MATCH_ID", "Date", "AwayTeam"]].rename(columns={"AwayTeam": "TEAM"}).copy()
+    for form_stat, (home_values, away_values) in available_form_targets.items():
+        home[form_stat] = home_values.to_numpy()
+        away[form_stat] = away_values.to_numpy()
 
     teams = pd.concat([home, away]).sort_values(["TEAM", "Date"])
     for col in stats:
@@ -92,6 +118,30 @@ def train_pipeline():
     away_model = PoissonRegressor(alpha=0.0001, max_iter=1000)
     away_model.fit(train[features], train["FTAG"])
 
+    # Auxiliary match-stat estimates use only pre-match form/Elo features and
+    # completed historical targets; bookmaker prices do not enter these models.
+    auxiliary_models = {}
+    auxiliary_targets = (
+        "HC", "AC", "HTHG", "HTAG", "HY", "AY", "HR", "AR", "HS", "AS",
+        "HST", "AST", "HF", "AF", "HO", "AO",
+    )
+    for target in auxiliary_targets:
+        if target not in matches.columns:
+            continue
+        target_values = pd.to_numeric(matches[target], errors="coerce")
+        available = (
+            target_values.notna() & (target_values >= 0)
+            & matches[features].notna().all(axis=1)
+        )
+        auxiliary_train = matches.loc[available].copy()
+        auxiliary_train["_AUX_TARGET"] = target_values.loc[available]
+        if len(auxiliary_train) < 500:
+            print("Not enough completed data to train the", target, "estimate.")
+            continue
+        auxiliary_model = PoissonRegressor(alpha=0.01, max_iter=1000)
+        auxiliary_model.fit(auxiliary_train[features], auxiliary_train["_AUX_TARGET"])
+        auxiliary_models[target] = auxiliary_model
+
     recent = teams.groupby("TEAM").tail(10)
     latest_form = recent.groupby("TEAM")[stats].mean()
     latest_form = latest_form[recent.groupby("TEAM").size() >= 5]
@@ -104,6 +154,7 @@ def train_pipeline():
         "latest_form": latest_form,
         "home_model": home_model,
         "away_model": away_model,
+        "auxiliary_models": auxiliary_models,
     }
 
 
@@ -123,6 +174,7 @@ ratings = trained["ratings"]
 latest_form = trained["latest_form"]
 home_model = trained["home_model"]
 away_model = trained["away_model"]
+auxiliary_models = trained.get("auxiliary_models", {})
 
 print("History up to:", trained["history_end"])
 
@@ -232,6 +284,75 @@ if market_odds["P_BTTS_MARKET"].notna().any():
 
 lam_home = home_model.predict(X[features])
 lam_away = away_model.predict(X[features])
+auxiliary_predictions = {
+    target: model.predict(X[features])
+    for target, model in auxiliary_models.items()
+}
+
+
+def auxiliary_prediction(target, default=np.nan):
+    return auxiliary_predictions.get(target, np.full(len(X), default, dtype=float))
+
+
+exp_home_corners = auxiliary_prediction("HC")
+exp_away_corners = auxiliary_prediction("AC")
+exp_home_ht_goals = auxiliary_prediction("HTHG")
+exp_away_ht_goals = auxiliary_prediction("HTAG")
+exp_home_yellow_cards = auxiliary_prediction("HY")
+exp_away_yellow_cards = auxiliary_prediction("AY")
+exp_home_red_cards = auxiliary_prediction("HR")
+exp_away_red_cards = auxiliary_prediction("AR")
+exp_home_shots = auxiliary_prediction("HS")
+exp_away_shots = auxiliary_prediction("AS")
+exp_home_shots_on_target = auxiliary_prediction("HST")
+exp_away_shots_on_target = auxiliary_prediction("AST")
+exp_home_fouls = auxiliary_prediction("HF")
+exp_away_fouls = auxiliary_prediction("AF")
+exp_home_offsides = auxiliary_prediction("HO")
+exp_away_offsides = auxiliary_prediction("AO")
+has_red_estimates = np.isfinite(exp_home_red_cards) & np.isfinite(exp_away_red_cards)
+p_any_red_card = np.full(len(X), np.nan)
+red_card_rate = exp_home_red_cards[has_red_estimates] + exp_away_red_cards[has_red_estimates]
+p_any_red_card[has_red_estimates] = 1 - np.exp(-red_card_rate)
+has_ht_estimates = np.isfinite(exp_home_ht_goals) & np.isfinite(exp_away_ht_goals)
+p_first_half_goal = np.full(len(X), np.nan)
+p_first_half_2plus = np.full(len(X), np.nan)
+first_half_goal_rate = exp_home_ht_goals[has_ht_estimates] + exp_away_ht_goals[has_ht_estimates]
+p_first_half_goal[has_ht_estimates] = 1 - np.exp(-first_half_goal_rate)
+p_first_half_2plus[has_ht_estimates] = 1 - np.exp(-first_half_goal_rate) * (1 + first_half_goal_rate)
+half_goals = np.arange(0, 11)
+half_grid = (
+    poisson.pmf(half_goals, np.nan_to_num(exp_home_ht_goals)[:, None])[:, :, None]
+    * poisson.pmf(half_goals, np.nan_to_num(exp_away_ht_goals)[:, None])[:, None, :]
+)
+half_i = half_goals[:, None]
+half_j = half_goals[None, :]
+p_ht_home = (half_grid * (half_i > half_j)).sum(axis=(1, 2))
+p_ht_draw = (half_grid * (half_i == half_j)).sum(axis=(1, 2))
+p_ht_away = (half_grid * (half_i < half_j)).sum(axis=(1, 2))
+p_ht_home[~has_ht_estimates] = np.nan
+p_ht_draw[~has_ht_estimates] = np.nan
+p_ht_away[~has_ht_estimates] = np.nan
+
+def poisson_over_probability(rate, min_count):
+    result = np.full(len(X), np.nan)
+    available = np.isfinite(rate) & (rate >= 0)
+    result[available] = poisson.sf(min_count - 1, rate[available])
+    return result
+
+
+total_corners = exp_home_corners + exp_away_corners
+total_shots = exp_home_shots + exp_away_shots
+total_shots_on_target = exp_home_shots_on_target + exp_away_shots_on_target
+total_yellow_cards = exp_home_yellow_cards + exp_away_yellow_cards
+total_fouls = exp_home_fouls + exp_away_fouls
+total_offsides = exp_home_offsides + exp_away_offsides
+p_over85_corners = poisson_over_probability(total_corners, 9)
+p_over215_shots = poisson_over_probability(total_shots, 22)
+p_over75_shots_on_target = poisson_over_probability(total_shots_on_target, 8)
+p_over35_yellow_cards = poisson_over_probability(total_yellow_cards, 4)
+p_over215_fouls = poisson_over_probability(total_fouls, 22)
+p_over25_offsides = poisson_over_probability(total_offsides, 3)
 
 goals = np.arange(0, 11)
 grid = (
@@ -291,6 +412,24 @@ for k in range(len(X)):
           + pct(p_draw[k] + p_away[k]) + " / " + pct(p_home[k] + p_away[k]))
     print("  Over 1.5 / 2.5 / 3.5 goals: " + pct(p_o15[k]) + " / " + pct(p_o25[k]) + " / " + pct(p_o35[k]))
     print("  Both teams score: " + pct(p_btts[k]))
+    if np.isfinite(exp_home_corners[k]) and np.isfinite(exp_away_corners[k]):
+        print("  Model expected corners (home / away):", round(exp_home_corners[k], 1), "/", round(exp_away_corners[k], 1))
+    if np.isfinite(exp_home_shots[k]) and np.isfinite(exp_away_shots[k]):
+        print("  Model expected shots (home / away):", round(exp_home_shots[k], 1), "/", round(exp_away_shots[k], 1))
+    if np.isfinite(exp_home_shots_on_target[k]) and np.isfinite(exp_away_shots_on_target[k]):
+        print("  Model expected shots on target (home / away):", round(exp_home_shots_on_target[k], 1), "/", round(exp_away_shots_on_target[k], 1))
+    if np.isfinite(exp_home_fouls[k]) and np.isfinite(exp_away_fouls[k]):
+        print("  Model expected fouls (home / away):", round(exp_home_fouls[k], 1), "/", round(exp_away_fouls[k], 1))
+    if np.isfinite(exp_home_offsides[k]) and np.isfinite(exp_away_offsides[k]):
+        print("  Model expected offsides (home / away):", round(exp_home_offsides[k], 1), "/", round(exp_away_offsides[k], 1))
+    if np.isfinite(exp_home_ht_goals[k]) and np.isfinite(exp_away_ht_goals[k]):
+        print("  Model expected first-half goals (home / away):", round(exp_home_ht_goals[k], 2), "/", round(exp_away_ht_goals[k], 2))
+        print("  Model chance of 1+ / 2+ first-half goals:", pct(p_first_half_goal[k]), "/", pct(p_first_half_2plus[k]))
+        print("  Model first-half home / draw / away:", pct(p_ht_home[k]), "/", pct(p_ht_draw[k]), "/", pct(p_ht_away[k]))
+    if np.isfinite(exp_home_red_cards[k]) and np.isfinite(exp_away_red_cards[k]):
+        print("  Model chance of at least one red card:", pct(p_any_red_card[k]))
+    if np.isfinite(exp_home_yellow_cards[k]) and np.isfinite(exp_away_yellow_cards[k]):
+        print("  Model expected yellow cards (home / away):", round(exp_home_yellow_cards[k], 1), "/", round(exp_away_yellow_cards[k], 1))
     if has_o25_market[k]:
         print("  Bookmaker Over 2.5 estimate:", pct(p_o25_market[k]), "|", X.iloc[k]["OVER25_SOURCE"])
     if has_btts_market[k]:
@@ -309,6 +448,30 @@ for k in range(len(X)):
         "Over 3.5": p_o35[k], "Under 3.5": 1 - p_o35[k],
         "BTTS yes": p_btts_model[k], "BTTS no": 1 - p_btts_model[k],
     }
+    extra_options = {
+        "First-half home win": p_ht_home[k],
+        "First-half draw": p_ht_draw[k],
+        "First-half away win": p_ht_away[k],
+        "First-half goal": p_first_half_goal[k],
+        "No first-half goal": 1 - p_first_half_goal[k] if np.isfinite(p_first_half_goal[k]) else np.nan,
+        "2+ first-half goals": p_first_half_2plus[k],
+        "Under 1.5 first-half goals": 1 - p_first_half_2plus[k] if np.isfinite(p_first_half_2plus[k]) else np.nan,
+        "Red card": p_any_red_card[k],
+        "No red card": 1 - p_any_red_card[k] if np.isfinite(p_any_red_card[k]) else np.nan,
+        "Over 8.5 corners": p_over85_corners[k],
+        "Under 8.5 corners": 1 - p_over85_corners[k] if np.isfinite(p_over85_corners[k]) else np.nan,
+        "Over 21.5 shots": p_over215_shots[k],
+        "Under 21.5 shots": 1 - p_over215_shots[k] if np.isfinite(p_over215_shots[k]) else np.nan,
+        "Over 7.5 shots on target": p_over75_shots_on_target[k],
+        "Under 7.5 shots on target": 1 - p_over75_shots_on_target[k] if np.isfinite(p_over75_shots_on_target[k]) else np.nan,
+        "Over 3.5 yellow cards": p_over35_yellow_cards[k],
+        "Under 3.5 yellow cards": 1 - p_over35_yellow_cards[k] if np.isfinite(p_over35_yellow_cards[k]) else np.nan,
+        "Over 21.5 fouls": p_over215_fouls[k],
+        "Under 21.5 fouls": 1 - p_over215_fouls[k] if np.isfinite(p_over215_fouls[k]) else np.nan,
+        "Over 2.5 offsides": p_over25_offsides[k],
+        "Under 2.5 offsides": 1 - p_over25_offsides[k] if np.isfinite(p_over25_offsides[k]) else np.nan,
+    }
+    options.update({name: prob for name, prob in extra_options.items() if np.isfinite(prob)})
     # Keep one highest-probability option per match so the shortlist cannot
     # be filled with several overlapping markets from the same fixture.
     best_name = max(options, key=options.get)
@@ -341,6 +504,31 @@ log = pd.DataFrame({
     "BTTS_BOOKS": pd.to_numeric(X["BTTS_BOOKS"], errors="coerce"),
     "OVER25_SOURCE": X["OVER25_SOURCE"], "BTTS_SOURCE": X["BTTS_SOURCE"],
     "EXP_HOME_GOALS": lam_home.round(2), "EXP_AWAY_GOALS": lam_away.round(2),
+    "EXP_HOME_CORNERS": np.round(exp_home_corners, 2),
+    "EXP_AWAY_CORNERS": np.round(exp_away_corners, 2),
+    "P_OVER85_CORNERS": np.round(p_over85_corners, 3),
+    "EXP_HOME_SHOTS": np.round(exp_home_shots, 2),
+    "EXP_AWAY_SHOTS": np.round(exp_away_shots, 2),
+    "P_OVER215_SHOTS": np.round(p_over215_shots, 3),
+    "EXP_HOME_SHOTS_ON_TARGET": np.round(exp_home_shots_on_target, 2),
+    "EXP_AWAY_SHOTS_ON_TARGET": np.round(exp_away_shots_on_target, 2),
+    "EXP_HOME_FOULS": np.round(exp_home_fouls, 2), "EXP_AWAY_FOULS": np.round(exp_away_fouls, 2),
+    "EXP_HOME_OFFSIDES": np.round(exp_home_offsides, 2), "EXP_AWAY_OFFSIDES": np.round(exp_away_offsides, 2),
+    "P_OVER75_SHOTS_ON_TARGET": np.round(p_over75_shots_on_target, 3),
+    "P_OVER215_FOULS": np.round(p_over215_fouls, 3),
+    "P_OVER25_OFFSIDES": np.round(p_over25_offsides, 3),
+    "EXP_HOME_HT_GOALS": np.round(exp_home_ht_goals, 2),
+    "EXP_AWAY_HT_GOALS": np.round(exp_away_ht_goals, 2),
+    "P_FIRST_HALF_GOAL": np.round(p_first_half_goal, 3),
+    "P_FIRST_HALF_2PLUS": np.round(p_first_half_2plus, 3),
+    "P_HT_HOME": np.round(p_ht_home, 3), "P_HT_DRAW": np.round(p_ht_draw, 3),
+    "P_HT_AWAY": np.round(p_ht_away, 3),
+    "EXP_HOME_YELLOW_CARDS": np.round(exp_home_yellow_cards, 2),
+    "EXP_AWAY_YELLOW_CARDS": np.round(exp_away_yellow_cards, 2),
+    "P_OVER35_YELLOW_CARDS": np.round(p_over35_yellow_cards, 3),
+    "EXP_HOME_RED_CARDS": np.round(exp_home_red_cards, 3),
+    "EXP_AWAY_RED_CARDS": np.round(exp_away_red_cards, 3),
+    "P_ANY_RED_CARD": np.round(p_any_red_card, 3),
     "ODDS_SOURCE": outcome_source,
     "MARKET_1X2_SOURCE": np.where(odds_available, "Fixture bookmaker odds reference", ""),
     "BEST_PICK": bet_picks, "BEST_PICK_PROB": np.round(bet_probs, 3),
