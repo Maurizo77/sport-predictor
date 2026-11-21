@@ -90,6 +90,35 @@ def show_football_predictions(base):
     c2.metric("Leagues covered", view["League"].nunique())
     c3.metric("Latest prediction date", latest_date)
 
+    if {"BEST_PICK", "BEST_PICK_PROB"}.issubset(view.columns):
+        shortlist = upcoming.dropna(subset=["BEST_PICK", "BEST_PICK_PROB"]).copy()
+        if not shortlist.empty:
+            shortlist["BEST_PICK_PROB"] = pd.to_numeric(
+                shortlist["BEST_PICK_PROB"], errors="coerce"
+            )
+            shortlist = shortlist.dropna(subset=["BEST_PICK_PROB"])
+            shortlist = shortlist.sort_values(
+                "BEST_PICK_PROB", ascending=False
+            ).head(12)
+            if not shortlist.empty:
+                st.subheader("Top picks (up to 12)")
+                st.caption(
+                    "One highest-probability option per match, ranked by the model. "
+                    "These are estimates, not sure bets."
+                )
+                shortlist["Confidence"] = shortlist["BEST_PICK_PROB"].map(
+                    lambda value: str(int(round(value * 100))) + "%"
+                )
+                st.dataframe(
+                    shortlist.assign(
+                        Date=shortlist["DATE"].dt.strftime("%Y-%m-%d"),
+                        Match=shortlist["HOME"].astype(str) + " vs " + shortlist["AWAY"].astype(str),
+                        Pick=shortlist["BEST_PICK"],
+                    )[["Date", "EVENT_TIME_WAT", "LEAGUE", "Match", "Pick", "Confidence"]],
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
     period = st.radio(
         "Fixtures", ["Upcoming", "All saved"], horizontal=True,
         key="football_fixture_period",
