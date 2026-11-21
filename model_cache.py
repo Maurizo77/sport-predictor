@@ -1,0 +1,47 @@
+"""Small persistent cache for models trained from unchanged local CSV data."""
+
+import os
+
+import joblib
+
+
+BASE = os.path.dirname(os.path.abspath(__file__))
+CACHE_DIR = os.path.join(BASE, ".cache")
+
+
+def _source_signature(source_path):
+    stat = os.stat(source_path)
+    return stat.st_size, stat.st_mtime_ns
+
+
+def load_model_cache(name, source_path, version):
+    """Return a cached payload when the input file and cache version still match."""
+    cache_path = os.path.join(CACHE_DIR, name)
+    if not os.path.exists(cache_path):
+        return None
+
+    try:
+        artifact = joblib.load(cache_path)
+        if (artifact.get("version") == version
+                and artifact.get("source_signature") == _source_signature(source_path)):
+            return artifact.get("payload")
+    except Exception:
+        # A partial or incompatible cache should be rebuilt from the source data.
+        pass
+    return None
+
+
+def save_model_cache(name, source_path, version, payload):
+    """Atomically store a trained-model payload so interrupted writes are harmless."""
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    cache_path = os.path.join(CACHE_DIR, name)
+    temporary_path = cache_path + ".tmp"
+    joblib.dump(
+        {
+            "version": version,
+            "source_signature": _source_signature(source_path),
+            "payload": payload,
+        },
+        temporary_path,
+    )
+    os.replace(temporary_path, cache_path)
