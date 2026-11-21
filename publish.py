@@ -14,6 +14,7 @@ FILES = [
     "app.py",
     "app_online.py",
     "football_predictions_view.py",
+    "football_feedback.py",
     "picks_view.py",
     "results_view.py",
     "team_names.py",
@@ -32,6 +33,8 @@ FILES = [
     "results_log.csv",
     "injuries_log.csv",
     "football_predictions_log.csv",
+    "football_feedback_log.csv",
+    "pool_picks.csv",
 ]
 
 token = os.environ.get("GITHUB_TOKEN")
