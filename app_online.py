@@ -3,7 +3,11 @@ import os
 import pandas as pd
 import streamlit as st
 
-from football_predictions_view import show_football_predictions
+from football_predictions_view import (
+    show_football_feedback,
+    show_football_predictions,
+    show_pool_draws,
+)
 from results_view import show_results
 from team_names import full
 
@@ -44,6 +48,10 @@ def basketball_view():
 
 
 def football_view():
+    show_football_feedback(BASE)
+    st.divider()
+    show_pool_draws(BASE)
+    st.divider()
     show_football_predictions(BASE)
 
 
