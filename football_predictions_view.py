@@ -52,6 +52,9 @@ def show_football_predictions(base):
         st.info("There are no dated football predictions to display.")
         return
 
+    st.subheader("Global football predictions")
+    st.caption("These fixtures come from the wider supported football feed, independently of the 49-match pool.")
+
     for column in ("P_HOME", "P_DRAW", "P_AWAY", "P_OVER25", "P_BTTS",
                    "EXP_HOME_GOALS", "EXP_AWAY_GOALS"):
         view[column] = pd.to_numeric(view[column], errors="coerce")
@@ -60,29 +63,65 @@ def show_football_predictions(base):
         st.info("The saved football predictions do not contain usable probabilities.")
         return
 
+    model_probability_columns = []
+    for source_column, fallback_column, display_column in (
+        ("P_HOME_MODEL", "P_HOME", "_MODEL_HOME"),
+        ("P_DRAW_MODEL", "P_DRAW", "_MODEL_DRAW"),
+        ("P_AWAY_MODEL", "P_AWAY", "_MODEL_AWAY"),
+    ):
+        if source_column in view.columns:
+            view[source_column] = pd.to_numeric(view[source_column], errors="coerce")
+            view[display_column] = view[source_column].fillna(view[fallback_column])
+        else:
+            view[display_column] = view[fallback_column]
+        model_probability_columns.append(display_column)
+
     view["League"] = view["LEAGUE"].map(LEAGUE_NAMES).fillna(view["LEAGUE"])
     view["Match"] = view["HOME"].astype(str) + " vs " + view["AWAY"].astype(str)
     if "EVENT_TIME_WAT" not in view:
         view["EVENT_TIME_WAT"] = "Time unavailable"
     view["Kickoff (WAT)"] = view["EVENT_TIME_WAT"].fillna("Time unavailable")
-    view["Most likely"] = view[["P_HOME", "P_DRAW", "P_AWAY"]].idxmax(axis=1).map(
-        {"P_HOME": "Home win", "P_DRAW": "Draw", "P_AWAY": "Away win"}
+    view["Most likely"] = view[model_probability_columns].idxmax(axis=1).map(
+        {"_MODEL_HOME": "Home win", "_MODEL_DRAW": "Draw", "_MODEL_AWAY": "Away win"}
     )
-    view["1X2 %"] = view.apply(
+    view["Model 1X2 %"] = view.apply(
         lambda row: " / ".join(
-            str(int(round(row[column] * 100))) for column in ("P_HOME", "P_DRAW", "P_AWAY")
+            str(int(round(row[column] * 100))) for column in model_probability_columns
         ), axis=1,
     )
+    probability_sets = {
+        "1X2 market reference %": ("P_HOME_MARKET", "P_DRAW_MARKET", "P_AWAY_MARKET"),
+    }
+    for label, columns in probability_sets.items():
+        if all(column in view.columns for column in columns):
+            for column in columns:
+                view[column] = pd.to_numeric(view[column], errors="coerce")
+            view[label] = view.apply(
+                lambda row: "—" if row[list(columns)].isna().any() else " / ".join(
+                    str(int(round(row[column] * 100))) for column in columns
+                ), axis=1,
+            )
+    for column in ("P_OVER25_MARKET", "P_BTTS_MARKET"):
+        if column in view.columns:
+            view[column] = pd.to_numeric(view[column], errors="coerce")
     view["Expected goals"] = view.apply(
         lambda row: "–" if pd.isna(row["EXP_HOME_GOALS"]) or pd.isna(row["EXP_AWAY_GOALS"])
         else f"{row['EXP_HOME_GOALS']:.1f} – {row['EXP_AWAY_GOALS']:.1f}", axis=1,
     )
-    view["Over 2.5 %"] = view["P_OVER25"].map(
+    view["Over 2.5 model %"] = view["P_OVER25"].map(
         lambda value: "—" if pd.isna(value) else str(int(round(value * 100))) + "%"
     )
-    view["BTTS %"] = view["P_BTTS"].map(
+    view["BTTS model %"] = view["P_BTTS"].map(
         lambda value: "—" if pd.isna(value) else str(int(round(value * 100))) + "%"
     )
+    if "P_OVER25_MARKET" in view.columns:
+        view["Over 2.5 market %"] = view["P_OVER25_MARKET"].map(
+            lambda value: "—" if pd.isna(value) else str(int(round(value * 100))) + "%"
+        )
+    if "P_BTTS_MARKET" in view.columns:
+        view["BTTS market %"] = view["P_BTTS_MARKET"].map(
+            lambda value: "—" if pd.isna(value) else str(int(round(value * 100))) + "%"
+        )
 
     today = pd.Timestamp.now().normalize()
     upcoming = view[view["DATE"] >= today]
@@ -93,7 +132,12 @@ def show_football_predictions(base):
     c3.metric("Latest prediction date", latest_date)
 
     if {"BEST_PICK", "BEST_PICK_PROB"}.issubset(view.columns):
-        shortlist = upcoming.dropna(subset=["BEST_PICK", "BEST_PICK_PROB"]).copy()
+        shortlist_source = upcoming
+        if "BEST_PICK_SOURCE" in shortlist_source.columns:
+            shortlist_source = shortlist_source[
+                shortlist_source["BEST_PICK_SOURCE"].eq("Poisson model")
+            ]
+        shortlist = shortlist_source.dropna(subset=["BEST_PICK", "BEST_PICK_PROB"]).copy()
         if not shortlist.empty:
             shortlist["BEST_PICK_PROB"] = pd.to_numeric(
                 shortlist["BEST_PICK_PROB"], errors="coerce"
@@ -105,18 +149,23 @@ def show_football_predictions(base):
             if not shortlist.empty:
                 st.subheader("Top picks (up to 12)")
                 st.caption(
-                    "One highest-probability option per match, ranked by the model. "
-                    "These are estimates, not sure bets."
+                    "One highest-probability option per match, ranked using the model's "
+                    "own estimates. Bookmaker prices are reference only; estimates are not guarantees."
                 )
-                shortlist["Confidence"] = shortlist["BEST_PICK_PROB"].map(
+                shortlist["Estimated chance"] = shortlist["BEST_PICK_PROB"].map(
                     lambda value: str(int(round(value * 100))) + "%"
                 )
-                st.dataframe(
-                    shortlist.assign(
+                shortlist_display = shortlist.assign(
                         Date=shortlist["DATE"].dt.strftime("%Y-%m-%d"),
                         Match=shortlist["HOME"].astype(str) + " vs " + shortlist["AWAY"].astype(str),
                         Pick=shortlist["BEST_PICK"],
-                    )[["Date", "EVENT_TIME_WAT", "LEAGUE", "Match", "Pick", "Confidence"]],
+                    )
+                shortlist_columns = ["Date", "EVENT_TIME_WAT", "LEAGUE", "Match", "Pick", "Estimated chance"]
+                if "BEST_PICK_SOURCE" in shortlist_display:
+                    shortlist_display["Pick source"] = shortlist_display["BEST_PICK_SOURCE"]
+                    shortlist_columns.append("Pick source")
+                st.dataframe(
+                    shortlist_display[shortlist_columns],
                     hide_index=True,
                     use_container_width=True,
                 )
@@ -141,17 +190,30 @@ def show_football_predictions(base):
     view["DATE"] = view["DATE"].dt.strftime("%Y-%m-%d")
 
     st.caption(
-        "1X2 shows home / draw / away probabilities. Where complete bookmaker prices "
-        "were available, the saved 1X2 outcome comes from their no-margin probabilities; "
-        "otherwise it comes from the model. Estimates, not guarantees."
+        "All percentages are uncertain estimates, never guarantees. Model estimates drive "
+        "the predictions and shortlist. Bookmaker 1X2, Over 2.5 and BTTS prices are separate "
+        "reference estimates and do not change the model's picks."
     )
     display_columns = [
-        "DATE", "Kickoff (WAT)", "League", "Match", "Most likely", "1X2 %",
-        "Expected goals", "Over 2.5 %", "BTTS %",
+        "DATE", "Kickoff (WAT)", "League", "Match", "Most likely", "Model 1X2 %",
+        "Expected goals", "Over 2.5 model %", "BTTS model %",
     ]
+    if "1X2 market reference %" in view.columns:
+        display_columns.insert(6, "1X2 market reference %")
+    if "P_OVER25_MARKET" in view.columns:
+        display_columns.append("Over 2.5 market %")
+    if "P_BTTS_MARKET" in view.columns:
+        display_columns.append("BTTS market %")
+    for source_column, label in (("OVER25_SOURCE", "Over 2.5 odds source"), ("BTTS_SOURCE", "BTTS odds source")):
+        if source_column in view.columns and view[source_column].fillna("").astype(str).ne("").any():
+            view[label] = view[source_column].replace("", "—").fillna("—")
+            display_columns.append(label)
     if "ODDS_SOURCE" in view.columns:
-        view["1X2 source"] = view["ODDS_SOURCE"].fillna("Model")
-        display_columns.append("1X2 source")
+        view["Prediction source"] = view["ODDS_SOURCE"].fillna("Poisson model")
+        display_columns.append("Prediction source")
+    if "MARKET_1X2_SOURCE" in view.columns and view["MARKET_1X2_SOURCE"].fillna("").astype(str).ne("").any():
+        view["1X2 odds reference"] = view["MARKET_1X2_SOURCE"].replace("", "—").fillna("—")
+        display_columns.append("1X2 odds reference")
     st.dataframe(
         view[display_columns],
         hide_index=True,
@@ -171,29 +233,27 @@ def show_pool_draws(base):
         st.error(f"Could not read the pool draw picks: {error}")
         return
 
-    required = {"DRAW_PICK", "HomeTeam", "AwayTeam", "MODEL", "SCORE", "LEAGUE"}
+    required = {"HomeTeam", "AwayTeam", "MODEL", "LEAGUE"}
     missing = sorted(required - set(pool.columns))
     if missing:
         st.error("The pool picks file is missing columns: " + ", ".join(missing))
         return
 
-    draw_mask = pool["DRAW_PICK"].astype(str).str.lower().eq("true")
-    picks = pool[draw_mask].copy()
-    if picks.empty:
-        st.info("No pool draw picks found. Regenerate the pool predictions.")
-        return
-
+    picks = pool.copy()
     picks["MODEL"] = pd.to_numeric(picks["MODEL"], errors="coerce")
-    picks["SCORE"] = pd.to_numeric(picks["SCORE"], errors="coerce")
-    picks = picks.dropna(subset=["MODEL", "SCORE"]).sort_values("SCORE", ascending=False)
+    picks = picks.dropna(subset=["MODEL"]).sort_values("MODEL", ascending=False).head(2)
+    if picks.empty:
+        st.info("No pool draw probabilities found. Refresh the current 49-fixture coupon.")
+        return
     picks["League"] = picks["LEAGUE"].map(LEAGUE_NAMES).fillna(picks["LEAGUE"])
     picks["Match"] = picks["HomeTeam"].astype(str) + " vs " + picks["AwayTeam"].astype(str)
     picks["Model draw chance"] = (picks["MODEL"] * 100).round(0).astype(int).astype(str) + "%"
 
-    st.subheader("Top pool draw picks")
+    st.subheader("Two draws from the current pool")
     st.caption(
-        "Ranked using the historical match model and bookmaker draw prices when available. "
-        "These are estimates, not guaranteed outcomes."
+        "These two picks are selected only from the current 49-match pool, ranked by the "
+        "model's draw estimates. Bookmaker draw prices are shown for reference only. "
+        "Probabilities are estimates, not guarantees."
     )
     columns = ["League", "Match", "Model draw chance"]
     if "BOOK" in picks.columns:
