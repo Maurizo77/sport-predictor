@@ -23,12 +23,15 @@ def show_basketball_picks(base):
             injuries = None
 
     latest["Game"] = latest["AWAY"].map(full) + " @ " + latest["HOME"].map(full)
+    if "EVENT_TIME_WAT" not in latest:
+        latest["EVENT_TIME_WAT"] = "Time unavailable"
+    latest["Event time (WAT)"] = latest["EVENT_TIME_WAT"].fillna("Time unavailable")
     latest["Pick"] = latest["PICK"].map(full)
     latest["Confidence %"] = (
         latest["HOME_WIN_PROB"].apply(lambda p: max(p, 1 - p)) * 100
     ).round(0)
     latest["Predicted total"] = latest["PRED_TOTAL"]
-    columns = ["Game", "Pick", "Confidence %", "Predicted total"]
+    columns = ["Game", "Event time (WAT)", "Pick", "Confidence %", "Predicted total"]
 
     st.caption("Latest saved predictions, for " + str(log["DATE"].max()))
     st.dataframe(
