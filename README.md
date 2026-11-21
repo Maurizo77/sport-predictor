@@ -25,20 +25,22 @@ Or double-click `start_app.bat.txt.bat`. It expects the environment above in the
 
 - **Basketball (NBA):** make today's picks, review saved results, refresh the NBA game history, and refresh injury data.
 - **Football:** predict fixtures available in the football-data.co.uk fixtures feed, update the historical football data, and inspect the current fixture feed.
+- **Pool draws:** put one fixture per line in `pool_list.txt`, then use **Refresh top two pool draws**. The phone dashboard displays the saved picks after publishing; the selector ranks by the historical model and blends bookmaker draw prices when available.
 - **Publish phone app files:** uploads the phone app, its shared view code, dependencies, and current prediction/result logs to the GitHub repository configured in `publish.py`. Set `GITHUB_TOKEN` before using it. This makes remote changes. Your hosting provider must be connected to that repository for the site to redeploy; the upload itself does not create or host a website.
 
-The first data refresh and predictions require an internet connection. NBA predictions read `nba_games.csv`; football predictions read `football_games.csv`. The update scripts save refreshed data locally, and the football updater keeps `football_games_backup.csv` before replacing data.
+The first data refresh and predictions require an internet connection. NBA predictions read `nba_games.csv`; football predictions read `football_games.csv`. The update scripts save refreshed data locally, and the football updater keeps `football_games_backup.csv` before replacing data. For each new weekly pool coupon, replace the prior fixtures in `pool_list.txt` before refreshing the pool picks.
 
-The NBA predictor stores its trained models and prepared team state in `.cache/`. The football predictor stores its trained models, Elo ratings, and latest team form there. The cache is local, ignored by Git, and refreshed automatically when the corresponding history CSV changes. Prediction output includes the time spent preparing or loading the cached training pipeline.
+The NBA predictor stores its trained models and prepared team state in `.cache/`. The football predictor stores its trained models, Elo ratings, and latest team form there. The cache is local, ignored by Git, and refreshed automatically when the corresponding history CSV changes. Football forecasts are compared with completed results from `football_games.csv`; refreshing that history also updates the feedback log. The model learns from actual match results on the next prediction run, not from its own guesses. Prediction output includes the time spent preparing or loading the cached training pipeline.
 
 ## Match times
 
-Both prediction screens show event times in Nigerian time (WAT, Africa/Lagos). NBA start times are converted from the scoreboard's UTC timestamp. Football fixture-feed times are treated as UK local time and converted with daylight-saving rules; a manual `my_fixtures.csv` can include an optional `TimeZone` column with an IANA zone name if its `Time` values use another local timezone. Missing or unparseable times display as `Time unavailable`. Older saved predictions remain visible and show that label until new predictions are generated.
+Both prediction screens show event times in Nigerian time (WAT, Africa/Lagos). NBA start times are converted from the scoreboard's UTC timestamp. Football fixture-feed times are treated as UK local time and converted with daylight-saving rules; a manual `my_fixtures.csv` can include an optional `TimeZone` column with an IANA zone name if its `Time` values use another local timezone. When a complete set of bookmaker 1X2 odds is included with a fixture, the displayed 1X2 probabilities use the no-margin odds; otherwise the Poisson model supplies them. Missing or unparseable times display as `Time unavailable`. Older saved predictions remain visible and show that label until new predictions are generated.
 
 ## Data and generated files
 
 - `nba_games.csv`, `football_games.csv`: model history used for predictions.
 - `predictions_log.csv`, `football_predictions_log.csv`: saved predictions.
+- `football_feedback_log.csv`: saved football predictions matched to completed historical results for the accuracy report.
 - `results_log.csv`, `injuries_log.csv`: NBA result checks and latest injury report.
 - `pool_list.txt`, `pool_fixtures.csv`, `pool_picks.csv`: optional football pool workflow (`make_pool_file.py`, then `pool_draws.py`).
 - `*_backup.csv`: local backups; keep these if you need to restore prior data.
