@@ -29,14 +29,14 @@ Or double-click `start_app.bat.txt.bat`. It expects the environment above in the
 
 The first data refresh and predictions require an internet connection. NBA predictions read `nba_games.csv`; football predictions read `football_games.csv`. The update scripts save refreshed data locally, and the football updater keeps `football_games_backup.csv` before replacing data.
 
-The NBA predictor stores its trained models and prepared team state in `.cache/`. The football predictor reuses its fitted goal models there. The cache is local, ignored by Git, and refreshed automatically when the corresponding history CSV changes.
+The NBA predictor stores its trained models and prepared team state in `.cache/`. The football predictor stores its trained models, Elo ratings, and latest team form there. The cache is local, ignored by Git, and refreshed automatically when the corresponding history CSV changes. Prediction output includes the time spent preparing or loading the cached training pipeline.
 
 ## Data and generated files
 
 - `nba_games.csv`, `football_games.csv`: model history used for predictions.
 - `predictions_log.csv`, `football_predictions_log.csv`: saved predictions.
 - `results_log.csv`, `injuries_log.csv`: NBA result checks and latest injury report.
-- `pool_list.txt`, `pool_fixtures.csv`, `pool_picks.csv`: optional football pool workflow (`ake_pool_file.py`, then `pool_draws.py`).
+- `pool_list.txt`, `pool_fixtures.csv`, `pool_picks.csv`: optional football pool workflow (`make_pool_file.py`, then `pool_draws.py`).
 - `*_backup.csv`: local backups; keep these if you need to restore prior data.
 
 The CSV history and logs are local project data. They are intentionally not excluded by `.gitignore`; review them before committing or sharing the folder.
