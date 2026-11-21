@@ -4,7 +4,11 @@ import sys
 
 import streamlit as st
 
-from football_predictions_view import show_football_predictions
+from football_predictions_view import (
+    show_football_feedback,
+    show_football_predictions,
+    show_pool_draws,
+)
 from picks_view import show_basketball_picks
 from results_view import show_results
 
@@ -88,6 +92,16 @@ def football_view():
     tab_picks, tab_update = st.tabs(["Football picks", "Update"])
 
     with tab_picks:
+        show_football_feedback(BASE)
+        st.divider()
+        st.caption("Pool fixtures are read from pool_list.txt.")
+        if st.button("Refresh top two pool draws"):
+            with st.spinner("Resolving and rating the pool fixtures..."):
+                pool_file_output = run_script("make_pool_file.py")
+                draw_output = run_script("pool_draws.py")
+            st.code(pool_file_output + "\n" + draw_output, language="text")
+        show_pool_draws(BASE)
+        st.divider()
         if st.button("Make football predictions"):
             with st.spinner("Preparing the football models and predicting..."):
                 output = run_script("predict_football_today.py")
@@ -101,6 +115,17 @@ def football_view():
             with st.spinner("Downloading the configured football leagues..."):
                 output = run_script("get_football_data.py")
             st.code(output, language="text")
+
+        st.caption("Updates actual results, rebuilds the model if the history changed, and saves a fresh forecast.")
+        if st.button("Update, retrain, and predict"):
+            with st.spinner("Refreshing completed matches..."):
+                data_output = run_script("get_football_data.py")
+            st.subheader("Football data refresh")
+            st.code(data_output, language="text")
+            with st.spinner("Training from completed results and making predictions..."):
+                prediction_output = run_script("predict_football_today.py")
+            st.subheader("Updated football predictions")
+            st.code(prediction_output, language="text")
 
         st.divider()
         st.write("Shows which upcoming matches the free fixtures file currently has.")
