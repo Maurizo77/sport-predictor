@@ -9,6 +9,7 @@ from scipy.stats import poisson
 from sklearn.linear_model import PoissonRegressor
 
 from model_cache import load_model_cache, save_model_cache
+from football_market_odds import fetch_football_market_odds
 from event_time import (
     FOOTBALL_FEED_TIMEZONE,
     TIME_UNAVAILABLE,
@@ -21,6 +22,8 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.path.join(BASE, "football_predictions_log.csv")
 MANUAL_FILE = "my_fixtures.csv"
 FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"
+FIXTURE_CACHE = os.path.join(BASE, ".cache", "football_fixtures.csv")
+MAX_FIXTURE_CACHE_AGE_DAYS = 3
 DAYS_AHEAD = 14
 CACHE_NAME = "football_training.joblib"
 CACHE_VERSION = 2
@@ -123,15 +126,49 @@ away_model = trained["away_model"]
 
 print("History up to:", trained["history_end"])
 
-source = MANUAL_FILE if os.path.exists(MANUAL_FILE) else FIXTURES_URL
-print("Fixtures from:", source)
-try:
-    fixtures = pd.read_csv(
-        source, encoding="utf-8-sig", encoding_errors="replace", on_bad_lines="skip"
-    )
-except Exception as error:
-    print("Could not read the fixtures:", type(error).__name__)
-    raise SystemExit
+manual_path = os.path.join(BASE, MANUAL_FILE)
+if os.path.exists(manual_path):
+    print("Fixtures from manual file:", manual_path)
+    try:
+        fixtures = pd.read_csv(
+            manual_path, encoding="utf-8-sig", encoding_errors="replace", on_bad_lines="skip"
+        )
+    except Exception as error:
+        print("Could not read the manual fixtures:", type(error).__name__, str(error))
+        raise SystemExit
+else:
+    print("Fixtures from:", FIXTURES_URL)
+    try:
+        fixtures = pd.read_csv(
+            FIXTURES_URL, encoding="utf-8-sig", encoding_errors="replace", on_bad_lines="skip"
+        )
+        try:
+            os.makedirs(os.path.dirname(FIXTURE_CACHE), exist_ok=True)
+            fixtures.to_csv(FIXTURE_CACHE, index=False)
+        except OSError as cache_error:
+            print("The live fixtures loaded, but the local cache could not be saved:", type(cache_error).__name__)
+    except Exception as error:
+        print("Could not download the fixture feed:", type(error).__name__, str(error))
+        cache_available = os.path.exists(FIXTURE_CACHE)
+        cache_age = None
+        if cache_available:
+            cache_age = pd.Timestamp.now() - pd.Timestamp.fromtimestamp(
+                os.path.getmtime(FIXTURE_CACHE)
+            )
+        if cache_available and cache_age <= pd.Timedelta(days=MAX_FIXTURE_CACHE_AGE_DAYS):
+            fixtures = pd.read_csv(FIXTURE_CACHE, encoding="utf-8-sig", on_bad_lines="skip")
+            print(
+                "Using saved fixtures updated",
+                round(cache_age.total_seconds() / 3600, 1),
+                "hours ago. Please check for postponed or changed games.",
+            )
+        else:
+            print("Check that this computer has internet access, then run the command again.")
+            if cache_available:
+                print("The saved fixture cache is older than 3 days, so it was not used.")
+            print("Offline option: place a current my_fixtures.csv in the project folder.")
+            print("It must contain Div, Date, HomeTeam and AwayTeam columns; Time is optional.")
+            raise SystemExit
 
 needed = ["Div", "Date", "HomeTeam", "AwayTeam"]
 missing = [c for c in needed if c not in fixtures.columns]
@@ -186,6 +223,13 @@ if X.empty:
     print("No matches could be predicted.")
     raise SystemExit
 
+market_odds = fetch_football_market_odds(X)
+X = pd.concat([X, market_odds], axis=1)
+if market_odds["P_OVER25_MARKET"].notna().any():
+    print("Bookmaker over/under 2.5 odds found for", int(market_odds["P_OVER25_MARKET"].notna().sum()), "matches.")
+if market_odds["P_BTTS_MARKET"].notna().any():
+    print("Bookmaker BTTS odds found for", int(market_odds["P_BTTS_MARKET"].notna().sum()), "matches.")
+
 lam_home = home_model.predict(X[features])
 lam_away = away_model.predict(X[features])
 
@@ -202,9 +246,11 @@ p_draw = (grid * (i == j)).sum(axis=(1, 2))
 p_away = (grid * (i < j)).sum(axis=(1, 2))
 norm = p_home + p_draw + p_away
 p_home, p_draw, p_away = p_home / norm, p_draw / norm, p_away / norm
+# Keep the model's estimates as the sole basis for predictions. Odds below are
+# stored as comparison references and never replace or rank the model's picks.
+p_home_model, p_draw_model, p_away_model = p_home.copy(), p_draw.copy(), p_away.copy()
 
-# The chronological holdout found bookmaker-implied 1X2 probabilities were
-# more accurate than this goal model when complete pre-match prices existed.
+# Keep no-margin bookmaker probabilities as an independent market reference.
 odds = X[["ODDS_HOME", "ODDS_DRAW", "ODDS_AWAY"]].apply(
     pd.to_numeric, errors="coerce"
 ).to_numpy(dtype=float)
@@ -213,14 +259,16 @@ market_probs = np.full_like(odds, np.nan, dtype=float)
 if odds_available.any():
     implied = 1 / odds[odds_available]
     market_probs[odds_available] = implied / implied.sum(axis=1, keepdims=True)
-p_home = np.where(odds_available, market_probs[:, 0], p_home)
-p_draw = np.where(odds_available, market_probs[:, 1], p_draw)
-p_away = np.where(odds_available, market_probs[:, 2], p_away)
-outcome_source = np.where(odds_available, "Bookmaker odds", "Model")
+outcome_source = np.full(len(X), "Poisson model", dtype=object)
 p_o15 = (grid * (i + j > 1.5)).sum(axis=(1, 2))
 p_o25 = (grid * (i + j > 2.5)).sum(axis=(1, 2))
 p_o35 = (grid * (i + j > 3.5)).sum(axis=(1, 2))
 p_btts = (grid * ((i > 0) & (j > 0))).sum(axis=(1, 2))
+p_o25_model, p_btts_model = p_o25.copy(), p_btts.copy()
+p_o25_market = pd.to_numeric(X["P_OVER25_MARKET"], errors="coerce").to_numpy(dtype=float)
+p_btts_market = pd.to_numeric(X["P_BTTS_MARKET"], errors="coerce").to_numpy(dtype=float)
+has_o25_market = np.isfinite(p_o25_market)
+has_btts_market = np.isfinite(p_btts_market)
 
 
 def pct(x):
@@ -238,11 +286,17 @@ for k in range(len(X)):
     top_scores = ", ".join(str(b // 11) + "-" + str(b % 11) + " " + pct(flat[b]) for b in best)
     print()
     print(r["LEAGUE"], r["DATE"], "| kickoff", r["EVENT_TIME_WAT"], "|", game)
-    print("  Win/draw/loss: " + pct(p_home[k]) + " / " + pct(p_draw[k]) + " / " + pct(p_away[k]))
+    print("  Model 1X2 estimates (not certainties): " + pct(p_home[k]) + " / " + pct(p_draw[k]) + " / " + pct(p_away[k]))
     print("  Double chance 1X / X2 / 12: " + pct(p_home[k] + p_draw[k]) + " / "
           + pct(p_draw[k] + p_away[k]) + " / " + pct(p_home[k] + p_away[k]))
     print("  Over 1.5 / 2.5 / 3.5 goals: " + pct(p_o15[k]) + " / " + pct(p_o25[k]) + " / " + pct(p_o35[k]))
     print("  Both teams score: " + pct(p_btts[k]))
+    if has_o25_market[k]:
+        print("  Bookmaker Over 2.5 estimate:", pct(p_o25_market[k]), "|", X.iloc[k]["OVER25_SOURCE"])
+    if has_btts_market[k]:
+        print("  Bookmaker BTTS estimate:", pct(p_btts_market[k]), "|", X.iloc[k]["BTTS_SOURCE"])
+    if odds_available[k]:
+        print("  Bookmaker 1X2 reference:", pct(market_probs[k, 0]), "/", pct(market_probs[k, 1]), "/", pct(market_probs[k, 2]))
     print("  Likely scores: " + top_scores)
 
     options = {
@@ -251,34 +305,46 @@ for k in range(len(X)):
         "Draw or away": p_draw[k] + p_away[k],
         "Home or away": p_home[k] + p_away[k],
         "Over 1.5": p_o15[k], "Under 1.5": 1 - p_o15[k],
-        "Over 2.5": p_o25[k], "Under 2.5": 1 - p_o25[k],
+        "Over 2.5": p_o25_model[k], "Under 2.5": 1 - p_o25_model[k],
         "Over 3.5": p_o35[k], "Under 3.5": 1 - p_o35[k],
-        "BTTS yes": p_btts[k], "BTTS no": 1 - p_btts[k],
+        "BTTS yes": p_btts_model[k], "BTTS no": 1 - p_btts_model[k],
     }
     # Keep one highest-probability option per match so the shortlist cannot
     # be filled with several overlapping markets from the same fixture.
     best_name = max(options, key=options.get)
-    picks.append((options[best_name], game, best_name, k))
+    picks.append((options[best_name], game, best_name, k, "Poisson model"))
 
 picks.sort(reverse=True)
 print()
-print("Most confident options (higher chance means lower odds):")
+print("Highest estimated chances (probabilities are uncertain, not guarantees):")
 shortlist = picks[:12]
-for prob, game, name, _ in shortlist:
-    print(" ", pct(prob), game, "->", name, "| fair odds", round(1 / prob, 2))
+for prob, game, name, _, source_name in shortlist:
+    print(" ", pct(prob), game, "->", name, "| source", source_name, "| model fair-odds estimate", round(1 / prob, 2))
 
-best_by_index = {index: (name, prob) for prob, _, name, index in picks}
+best_by_index = {index: (name, prob, source_name) for prob, _, name, index, source_name in picks}
 bet_picks = [best_by_index[k][0] for k in range(len(X))]
 bet_probs = [best_by_index[k][1] for k in range(len(X))]
+bet_sources = [best_by_index[k][2] for k in range(len(X))]
 
 log = pd.DataFrame({
     "DATE": X["DATE"], "EVENT_TIME_WAT": X["EVENT_TIME_WAT"],
     "LEAGUE": X["LEAGUE"], "HOME": X["HOME"], "AWAY": X["AWAY"],
     "P_HOME": p_home.round(3), "P_DRAW": p_draw.round(3), "P_AWAY": p_away.round(3),
-    "P_OVER25": p_o25.round(3), "P_BTTS": p_btts.round(3),
+    "P_HOME_MODEL": p_home_model.round(3), "P_DRAW_MODEL": p_draw_model.round(3),
+    "P_AWAY_MODEL": p_away_model.round(3),
+    "P_HOME_MARKET": market_probs[:, 0].round(3),
+    "P_DRAW_MARKET": market_probs[:, 1].round(3),
+    "P_AWAY_MARKET": market_probs[:, 2].round(3),
+    "P_OVER25": p_o25_model.round(3), "P_BTTS": p_btts_model.round(3),
+    "P_OVER25_MARKET": p_o25_market.round(3), "P_BTTS_MARKET": p_btts_market.round(3),
+    "OVER25_BOOKS": pd.to_numeric(X["OVER25_BOOKS"], errors="coerce"),
+    "BTTS_BOOKS": pd.to_numeric(X["BTTS_BOOKS"], errors="coerce"),
+    "OVER25_SOURCE": X["OVER25_SOURCE"], "BTTS_SOURCE": X["BTTS_SOURCE"],
     "EXP_HOME_GOALS": lam_home.round(2), "EXP_AWAY_GOALS": lam_away.round(2),
     "ODDS_SOURCE": outcome_source,
+    "MARKET_1X2_SOURCE": np.where(odds_available, "Fixture bookmaker odds reference", ""),
     "BEST_PICK": bet_picks, "BEST_PICK_PROB": np.round(bet_probs, 3),
+    "BEST_PICK_SOURCE": bet_sources,
 })
 if os.path.exists(LOG_FILE):
     old = pd.read_csv(LOG_FILE)
