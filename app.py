@@ -2,92 +2,131 @@ import os
 import subprocess
 import sys
 
-import pandas as pd
 import streamlit as st
 
-from team_names import full
+from football_predictions_view import show_football_predictions
+from picks_view import show_basketball_picks
+from results_view import show_results
+
+DEVELOPER = "ENGR Maurizo"
+APP_NAME = "Sports Predictor"
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 
-st.set_page_config(page_title="Sports Predictor", page_icon="🏀")
-st.title("🏀 Sports Predictor")
+st.set_page_config(page_title=APP_NAME + " by " + DEVELOPER, page_icon="🏆", layout="wide")
+st.title("🏆 " + APP_NAME)
+st.caption("NBA and football predictions. Built by " + DEVELOPER + ".")
 
 
 def run_script(script):
-    result = subprocess.run(
-        [sys.executable, script],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        cwd=BASE,
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-    )
-    return result.stdout + result.stderr
-
-
-tab_picks, tab_results, tab_update = st.tabs(["Today's picks", "Results", "Update"])
-
-with tab_picks:
-    if st.button("Make predictions for today's games"):
-        with st.spinner("Training the models and predicting..."):
-            output = run_script("predict_today.py")
-        st.code(output, language="text")
-
-    log_path = os.path.join(BASE, "predictions_log.csv")
-    if os.path.exists(log_path):
-        log = pd.read_csv(log_path, dtype={"GAME_ID": str})
-        latest = log[log["DATE"] == log["DATE"].max()].copy()
-        latest["Game"] = latest["AWAY"].map(full) + " @ " + latest["HOME"].map(full)
-        latest["Pick"] = latest["PICK"].map(full)
-        latest["Confidence %"] = (
-            latest["HOME_WIN_PROB"].apply(lambda p: max(p, 1 - p)) * 100
-        ).round(0)
-        latest["Predicted total"] = latest["PRED_TOTAL"]
-        st.caption("Latest saved predictions, for " + str(log["DATE"].max()))
-        st.dataframe(
-            latest[["Game", "Pick", "Confidence %", "Predicted total"]],
-            hide_index=True,
+    try:
+        result = subprocess.run(
+            [sys.executable, os.path.join(BASE, script)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=BASE,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            check=False,
         )
-    else:
-        st.info("No predictions saved yet. Click the button above.")
+    except OSError as error:
+        return f"Could not start {script}: {error}"
 
-with tab_results:
-    st.write("Compares the saved picks with the real results.")
-    if st.button("Check results of saved picks"):
-        with st.spinner("Checking results..."):
-            run_script("check_result.py")
+    output = result.stdout + result.stderr
+    if result.returncode:
+        output += f"\n{script} exited with code {result.returncode}. See the output above."
+    return output or f"{script} finished successfully with no output."
 
-    results_path = os.path.join(BASE, "results_log.csv")
-    if os.path.exists(results_path):
-        res = pd.read_csv(results_path, dtype={"GAME_ID": str})
-        res["Result"] = res["CORRECT"].map({True: "✔", False: "✘"})
-        res["Total error"] = (res["PRED_TOTAL"] - res["REAL_TOTAL"]).abs().round(1)
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Games checked", len(res))
-        c2.metric("Correct", int(res["CORRECT"].sum()))
-        c3.metric("Accuracy", str(round(res["CORRECT"].mean() * 100)) + "%")
-        st.metric("Average total error (points)", round(res["Total error"].mean(), 1))
+def basketball_view():
+    tab_picks, tab_results, tab_update = st.tabs(["Today's picks", "Results", "Update"])
 
-        st.dataframe(
-            res[["DATE", "GAME", "PICK", "WINNER", "Result",
-                 "PRED_TOTAL", "REAL_TOTAL", "Total error"]],
-            hide_index=True,
-        )
-    else:
-        st.info("No checked results yet. Click the button above.")
-
-with tab_update:
-    st.write("Downloads the latest finished games (takes about a minute).")
-    if st.button("Update game data"):
-        with st.spinner("Downloading..."):
-            output = run_script("get_all_seasons.py")
-        st.code(output, language="text")
-
-    st.divider()
-    if st.button("Run everything: check results, update data, predict"):
-        for script in ["check_result.py", "get_all_seasons.py", "predict_today.py"]:
-            with st.spinner("Running " + script + " ..."):
-                output = run_script(script)
-            st.subheader(script)
+    with tab_picks:
+        if st.button("Make predictions for today's games"):
+            with st.spinner("Preparing the models and predicting..."):
+                output = run_script("predict_today.py")
+                injury_output = run_script("injuries.py")
+            st.subheader("Predictions")
             st.code(output, language="text")
+            st.subheader("Injury report refresh")
+            st.code(injury_output, language="text")
+        show_basketball_picks(BASE)
+
+    with tab_results:
+        st.write("Compares the saved picks with the real results.")
+        if st.button("Check results of saved picks"):
+            with st.spinner("Checking results..."):
+                output = run_script("check_result.py")
+            st.code(output, language="text")
+        show_results(BASE)
+
+    with tab_update:
+        st.write("Downloads the latest finished games (takes about a minute).")
+        if st.button("Update game data"):
+            with st.spinner("Downloading..."):
+                output = run_script("get_all_seasons.py")
+            st.code(output, language="text")
+
+        st.divider()
+        st.write("Refreshes the injury list.")
+        if st.button("Update injury list"):
+            with st.spinner("Downloading the injury list..."):
+                output = run_script("injuries.py")
+            st.code(output, language="text")
+
+        st.divider()
+        if st.button("Run everything: check results, update data, predict, injuries"):
+            for script in ["check_result.py", "get_all_seasons.py",
+                           "predict_today.py", "injuries.py"]:
+                with st.spinner("Running " + script + " ..."):
+                    output = run_script(script)
+                st.subheader(script)
+                st.code(output, language="text")
+
+
+def football_view():
+    tab_picks, tab_update = st.tabs(["Football picks", "Update"])
+
+    with tab_picks:
+        if st.button("Make football predictions"):
+            with st.spinner("Preparing the football models and predicting..."):
+                output = run_script("predict_football_today.py")
+            st.code(output, language="text")
+
+        show_football_predictions(BASE)
+
+    with tab_update:
+        st.write("Downloads the latest finished football matches (takes a few minutes).")
+        if st.button("Update football data"):
+            with st.spinner("Downloading the configured football leagues..."):
+                output = run_script("get_football_data.py")
+            st.code(output, language="text")
+
+        st.divider()
+        st.write("Shows which upcoming matches the free fixtures file currently has.")
+        if st.button("Check the fixtures file"):
+            with st.spinner("Checking..."):
+                output = run_script("check_fixtures.py")
+            st.code(output, language="text")
+
+
+sport = st.radio("Sport", ["Basketball (NBA)", "Football"], horizontal=True)
+if sport == "Basketball (NBA)":
+    basketball_view()
+else:
+    football_view()
+
+st.divider()
+st.subheader("Phone app")
+st.write(
+    "Uploads the phone app source and latest prediction and result logs to the "
+    "GitHub repository configured in publish.py. Your hosting service controls "
+    "when those changes appear online."
+)
+if st.button("Publish to phone link"):
+    with st.spinner("Publishing..."):
+        output = run_script("publish.py")
+    st.code(output, language="text")
+
+st.divider()
+st.caption("© 2026 " + DEVELOPER + ". All rights reserved.")
