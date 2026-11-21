@@ -19,6 +19,7 @@ FILES = [
     "team_names.py",
     "predict_today.py",
     "predict_football_today.py",
+    "event_time.py",
     "model_cache.py",
     "publish.py",
     "README.md",
