@@ -60,6 +60,9 @@ def show_football_predictions(base):
 
     view["League"] = view["LEAGUE"].map(LEAGUE_NAMES).fillna(view["LEAGUE"])
     view["Match"] = view["HOME"].astype(str) + " vs " + view["AWAY"].astype(str)
+    if "EVENT_TIME_WAT" not in view:
+        view["EVENT_TIME_WAT"] = "Time unavailable"
+    view["Kickoff (WAT)"] = view["EVENT_TIME_WAT"].fillna("Time unavailable")
     view["Most likely"] = view[["P_HOME", "P_DRAW", "P_AWAY"]].idxmax(axis=1).map(
         {"P_HOME": "Home win", "P_DRAW": "Draw", "P_AWAY": "Away win"}
     )
@@ -108,7 +111,7 @@ def show_football_predictions(base):
 
     st.caption("1X2 shows home / draw / away probabilities. Model estimates, not guarantees.")
     st.dataframe(
-        view[["DATE", "League", "Match", "Most likely", "1X2 %", "Expected goals",
+        view[["DATE", "Kickoff (WAT)", "League", "Match", "Most likely", "1X2 %", "Expected goals",
               "Over 2.5 %", "BTTS %"]],
         hide_index=True,
         use_container_width=True,
