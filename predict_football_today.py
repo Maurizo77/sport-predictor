@@ -210,14 +210,6 @@ def pct(x):
 
 
 picks = []
-groups = {
-    "Result": ["Home win", "Draw", "Away win"],
-    "Double chance": ["Home or draw", "Draw or away", "Home or away"],
-    "1.5 goals": ["Over 1.5", "Under 1.5"],
-    "2.5 goals": ["Over 2.5", "Under 2.5"],
-    "3.5 goals": ["Over 3.5", "Under 3.5"],
-    "Both teams score": ["BTTS yes", "BTTS no"],
-}
 
 print("Predictions for matches in the next", DAYS_AHEAD, "days")
 for k in range(len(X)):
@@ -245,15 +237,21 @@ for k in range(len(X)):
         "Over 3.5": p_o35[k], "Under 3.5": 1 - p_o35[k],
         "BTTS yes": p_btts[k], "BTTS no": 1 - p_btts[k],
     }
-    for names in groups.values():
-        best_name = max(names, key=lambda n: options[n])
-        picks.append((options[best_name], game, best_name))
+    # Keep one highest-probability option per match so the shortlist cannot
+    # be filled with several overlapping markets from the same fixture.
+    best_name = max(options, key=options.get)
+    picks.append((options[best_name], game, best_name))
 
 picks.sort(reverse=True)
 print()
 print("Most confident options (higher chance means lower odds):")
-for prob, game, name in picks[:10]:
+shortlist = picks[:12]
+for prob, game, name in shortlist:
     print(" ", pct(prob), game, "->", name, "| fair odds", round(1 / prob, 2))
+
+best_by_game = {game: (name, prob) for prob, game, name in picks}
+bet_picks = [best_by_game[r["HOME"] + " vs " + r["AWAY"]][0] for _, r in X.iterrows()]
+bet_probs = [best_by_game[r["HOME"] + " vs " + r["AWAY"]][1] for _, r in X.iterrows()]
 
 log = pd.DataFrame({
     "DATE": X["DATE"], "EVENT_TIME_WAT": X["EVENT_TIME_WAT"],
@@ -261,12 +259,15 @@ log = pd.DataFrame({
     "P_HOME": p_home.round(3), "P_DRAW": p_draw.round(3), "P_AWAY": p_away.round(3),
     "P_OVER25": p_o25.round(3), "P_BTTS": p_btts.round(3),
     "EXP_HOME_GOALS": lam_home.round(2), "EXP_AWAY_GOALS": lam_away.round(2),
+    "BEST_PICK": bet_picks, "BEST_PICK_PROB": np.round(bet_probs, 3),
 })
 if os.path.exists(LOG_FILE):
     old = pd.read_csv(LOG_FILE)
     old_keys = old["DATE"].astype(str) + old["HOME"] + old["AWAY"]
     new_keys = log["DATE"].astype(str) + log["HOME"] + log["AWAY"]
-    log = log[~new_keys.isin(old_keys)]
+    # Refresh matching fixtures so new shortlist fields are recorded and
+    # reruns update predictions for fixtures that have not started yet.
+    old = old[~old_keys.isin(new_keys)]
     if "EVENT_TIME_WAT" not in old:
         old["EVENT_TIME_WAT"] = TIME_UNAVAILABLE
     columns = list(dict.fromkeys(list(old.columns) + list(log.columns)))
@@ -284,4 +285,4 @@ if os.path.exists(LOG_FILE):
 else:
     log.to_csv(LOG_FILE, index=False)
 print()
-print("Saved", len(log), "new predictions to", LOG_FILE)
+print("Saved or refreshed", len(log), "predictions to", LOG_FILE)
