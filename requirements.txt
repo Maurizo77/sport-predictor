@@ -4,3 +4,4 @@ nba_api
 scikit-learn
 scipy
 requests
+joblib
