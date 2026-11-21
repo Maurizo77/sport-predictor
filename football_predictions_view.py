@@ -220,6 +220,82 @@ def show_football_predictions(base):
         use_container_width=True,
     )
 
+    auxiliary_pairs = (
+        ("EXP_HOME_CORNERS", "EXP_AWAY_CORNERS", "Expected corners (home / away)"),
+        ("EXP_HOME_SHOTS", "EXP_AWAY_SHOTS", "Expected shots (home / away)"),
+        ("EXP_HOME_SHOTS_ON_TARGET", "EXP_AWAY_SHOTS_ON_TARGET", "Expected shots on target (home / away)"),
+        ("EXP_HOME_FOULS", "EXP_AWAY_FOULS", "Expected fouls (home / away)"),
+        ("EXP_HOME_OFFSIDES", "EXP_AWAY_OFFSIDES", "Expected offsides (home / away)"),
+        ("EXP_HOME_HT_GOALS", "EXP_AWAY_HT_GOALS", "Expected first-half goals (home / away)"),
+        ("EXP_HOME_YELLOW_CARDS", "EXP_AWAY_YELLOW_CARDS", "Expected yellow cards (home / away)"),
+        ("EXP_HOME_RED_CARDS", "EXP_AWAY_RED_CARDS", "Expected red cards (home / away)"),
+    )
+    auxiliary_columns = [column for pair in auxiliary_pairs for column in pair[:2]]
+    auxiliary_columns += [
+        "P_FIRST_HALF_GOAL", "P_FIRST_HALF_2PLUS", "P_ANY_RED_CARD",
+        "P_HT_HOME", "P_HT_DRAW", "P_HT_AWAY", "P_OVER85_CORNERS",
+        "P_OVER215_SHOTS", "P_OVER75_SHOTS_ON_TARGET", "P_OVER35_YELLOW_CARDS",
+        "P_OVER215_FOULS", "P_OVER25_OFFSIDES",
+    ]
+    if any(column in view.columns for column in auxiliary_columns):
+        with st.expander("Additional match-stat predictions (model estimates)"):
+            st.caption(
+                "These estimates come from historical match statistics; bookmaker odds do not drive them. "
+                "Count-based chances use a Poisson approximation and are estimates. "
+                "The current history has half-time totals but not goal timestamps, so goals in the first "
+                "5, 10, 15, or 20 minutes cannot yet be estimated reliably."
+            )
+            auxiliary = view.copy()
+            for column in auxiliary_columns:
+                if column in auxiliary.columns:
+                    auxiliary[column] = pd.to_numeric(auxiliary[column], errors="coerce")
+
+            def pair_estimate(row, home_column, away_column):
+                if home_column not in auxiliary.columns or away_column not in auxiliary.columns:
+                    return "—"
+                home_value, away_value = row[home_column], row[away_column]
+                if pd.isna(home_value) or pd.isna(away_value):
+                    return "—"
+                return f"{home_value:.1f} / {away_value:.1f}"
+
+            feature_columns = ["DATE", "League", "Match"]
+            for home_column, away_column, label in auxiliary_pairs:
+                if home_column in auxiliary.columns and away_column in auxiliary.columns:
+                    auxiliary[label] = auxiliary.apply(
+                        lambda row: pair_estimate(row, home_column, away_column), axis=1
+                    )
+                    feature_columns.append(label)
+            for column, label in (
+                ("P_FIRST_HALF_GOAL", "Chance of 1+ first-half goals"),
+                ("P_FIRST_HALF_2PLUS", "Chance of 2+ first-half goals"),
+                ("P_ANY_RED_CARD", "Chance of any red card"),
+                ("P_OVER85_CORNERS", "Chance of over 8.5 corners"),
+                ("P_OVER215_SHOTS", "Chance of over 21.5 shots"),
+                ("P_OVER75_SHOTS_ON_TARGET", "Chance of over 7.5 shots on target"),
+                ("P_OVER35_YELLOW_CARDS", "Chance of over 3.5 yellow cards"),
+                ("P_OVER215_FOULS", "Chance of over 21.5 fouls"),
+                ("P_OVER25_OFFSIDES", "Chance of over 2.5 offsides"),
+            ):
+                if column in auxiliary.columns:
+                    auxiliary[label] = auxiliary[column].map(
+                        lambda value: "—" if pd.isna(value) else f"{int(round(value * 100))}%"
+                    )
+                    feature_columns.append(label)
+            half_result_columns = ("P_HT_HOME", "P_HT_DRAW", "P_HT_AWAY")
+            if all(column in auxiliary.columns for column in half_result_columns):
+                auxiliary["Half-time result chance (home / draw / away)"] = auxiliary.apply(
+                    lambda row: "—" if row[list(half_result_columns)].isna().any() else " / ".join(
+                        f"{int(round(row[column] * 100))}%" for column in half_result_columns
+                    ), axis=1,
+                )
+                feature_columns.append("Half-time result chance (home / draw / away)")
+            if "P_ANY_RED_CARD" in auxiliary.columns:
+                auxiliary["Chance of no red card"] = auxiliary["P_ANY_RED_CARD"].map(
+                    lambda value: "—" if pd.isna(value) else f"{int(round((1 - value) * 100))}%"
+                )
+                feature_columns.append("Chance of no red card")
+            st.dataframe(auxiliary[feature_columns], hide_index=True, use_container_width=True)
+
 
 def show_pool_draws(base):
     path = os.path.join(base, "pool_picks.csv")
