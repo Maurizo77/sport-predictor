@@ -23,6 +23,15 @@ st.caption("NBA and football predictions. Built by " + DEVELOPER + ".")
 
 
 def run_script(script):
+    child_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    # Streamlit Community Cloud secrets are not automatically inherited by a
+    # child Python process. Pass the odds key without printing or persisting it.
+    try:
+        odds_api_key = st.secrets.get("ODDS_API_KEY")
+        if odds_api_key:
+            child_env["ODDS_API_KEY"] = str(odds_api_key)
+    except Exception:
+        pass
     try:
         result = subprocess.run(
             [sys.executable, os.path.join(BASE, script)],
@@ -30,7 +39,7 @@ def run_script(script):
             text=True,
             encoding="utf-8",
             cwd=BASE,
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            env=child_env,
             check=False,
         )
     except OSError as error:
@@ -94,7 +103,12 @@ def football_view():
     with tab_picks:
         show_football_feedback(BASE)
         st.divider()
-        st.caption("Pool fixtures are read from pool_list.txt.")
+        st.caption("Fetch the newest upcoming 49-match coupon from AbleFAST, or use your own list below.")
+        if st.button("Fetch next coupon and refresh draw picks"):
+            with st.spinner("Fetching the next coupon and rating all fixtures..."):
+                output = run_script("refresh_pool.py")
+            st.code(output, language="text")
+        st.caption("Manual fallback: pool fixtures are read from pool_list.txt.")
         if st.button("Refresh top two pool draws"):
             with st.spinner("Resolving and rating the pool fixtures..."):
                 pool_file_output = run_script("make_pool_file.py")
