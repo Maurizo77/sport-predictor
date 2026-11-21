@@ -6,13 +6,6 @@ import streamlit as st
 from team_names import full
 
 
-def injury_counts(injuries, team_name):
-    team = injuries[injuries["TEAM"] == team_name]
-    out = int(team["STATUS"].isin(["Out", "Suspension"]).sum())
-    day = int((team["STATUS"] == "Day-To-Day").sum())
-    return out, day
-
-
 def show_basketball_picks(base):
     log_path = os.path.join(base, "predictions_log.csv")
     if not os.path.exists(log_path):
@@ -37,20 +30,16 @@ def show_basketball_picks(base):
     latest["Predicted total"] = latest["PRED_TOTAL"]
     columns = ["Game", "Pick", "Confidence %", "Predicted total"]
 
-    if injuries is not None:
-
-        def note(row):
-            parts = []
-            for code in [row["AWAY"], row["HOME"]]:
-                out, day = injury_counts(injuries, full(code))
-                parts.append(code + ": " + str(out) + " out, " + str(day) + " day-to-day")
-            return " | ".join(parts)
-
-        latest["Injuries (away | home)"] = latest.apply(note, axis=1)
-        columns.append("Injuries (away | home)")
-
     st.caption("Latest saved predictions, for " + str(log["DATE"].max()))
-    st.dataframe(latest[columns], hide_index=True)
+    st.dataframe(
+        latest[columns],
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "Confidence %": st.column_config.NumberColumn(format="%.0f%%"),
+            "Predicted total": st.column_config.NumberColumn(format="%.1f"),
+        },
+    )
 
     if injuries is not None:
         st.subheader("Injury report for these teams")
@@ -62,7 +51,9 @@ def show_basketball_picks(base):
         )
         names = set(latest["AWAY"].map(full)) | set(latest["HOME"].map(full))
         view = injuries[injuries["TEAM"].isin(names)].sort_values(["TEAM", "STATUS"])
-        st.dataframe(
-            view[["TEAM", "PLAYER", "POSITION", "STATUS", "PROBLEM", "RETURN", "NOTE"]],
-            hide_index=True,
-        )
+        with st.expander("Injury report details"):
+            st.dataframe(
+                view[["TEAM", "PLAYER", "POSITION", "STATUS", "PROBLEM", "RETURN", "NOTE"]],
+                hide_index=True,
+                use_container_width=True,
+            )
