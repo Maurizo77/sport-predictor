@@ -54,11 +54,31 @@ for row in matches.itertuples():
     ratings[row.AwayTeam] = rating_away - change
 matches["ELO_DIFF"] = elo_diff
 
-stats = ["GF", "GA", "SF", "SA"]
-home = matches[["MATCH_ID", "Date", "HomeTeam", "FTHG", "FTAG", "HST", "AST"]]
-home.columns = ["MATCH_ID", "Date", "TEAM", "GF", "GA", "SF", "SA"]
-away = matches[["MATCH_ID", "Date", "AwayTeam", "FTAG", "FTHG", "AST", "HST"]]
-away.columns = ["MATCH_ID", "Date", "TEAM", "GF", "GA", "SF", "SA"]
+form_sources = {
+    "GF": ("FTHG", "FTAG"), "GA": ("FTAG", "FTHG"),
+    "SF": ("HST", "AST"), "SA": ("AST", "HST"),
+    "SH": ("HS", "AS"), "SHA": ("AS", "HS"),
+    "CF": ("HC", "AC"), "CA": ("AC", "HC"),
+    "YF": ("HY", "AY"), "YA": ("AY", "HY"),
+    "RF": ("HR", "AR"), "RA": ("AR", "HR"),
+    "HTF": ("HTHG", "HTAG"), "HTA": ("HTAG", "HTHG"),
+    "FOULS_FOR": ("HF", "AF"), "FOULS_AGAINST": ("AF", "HF"),
+    "OFFSIDES_FOR": ("HO", "AO"), "OFFSIDES_AGAINST": ("AO", "HO"),
+}
+stats = []
+for stat, (home_source, away_source) in list(form_sources.items()):
+    if home_source in matches and away_source in matches:
+        home_values = pd.to_numeric(matches[home_source], errors="coerce")
+        away_values = pd.to_numeric(matches[away_source], errors="coerce")
+        if min(home_values.notna().sum(), away_values.notna().sum()) >= 500:
+            stats.append(stat)
+            form_sources[stat] = (home_values, away_values)
+
+home = matches[["MATCH_ID", "Date", "HomeTeam"]].rename(columns={"HomeTeam": "TEAM"}).copy()
+away = matches[["MATCH_ID", "Date", "AwayTeam"]].rename(columns={"AwayTeam": "TEAM"}).copy()
+for stat in stats:
+    home[stat] = form_sources[stat][0].to_numpy()
+    away[stat] = form_sources[stat][1].to_numpy()
 
 teams = pd.concat([home, away]).sort_values(["TEAM", "Date"])
 for col in stats:
