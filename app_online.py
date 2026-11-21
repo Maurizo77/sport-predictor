@@ -1,27 +1,13 @@
 import os
 
-import pandas as pd
 import streamlit as st
 
+from football_predictions_view import show_football_predictions
 from results_view import show_results
 from team_names import full
 
 DEVELOPER = "ENGR Maurizo"
 APP_NAME = "Sports Predictor"
-
-LEAGUE_NAMES = {
-    "E0": "England Premier League",
-    "SC0": "Scotland Premiership",
-    "D1": "Germany Bundesliga",
-    "I1": "Italy Serie A",
-    "SP1": "Spain La Liga",
-    "F1": "France Ligue 1",
-    "N1": "Netherlands Eredivisie",
-    "B1": "Belgium Pro League",
-    "P1": "Portugal Primeira Liga",
-    "T1": "Turkey Super Lig",
-    "G1": "Greece Super League",
-}
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 
@@ -56,44 +42,8 @@ def basketball_view():
         show_results(BASE)
 
 
-def best_result(row):
-    options = {"Home win": row["P_HOME"], "Draw": row["P_DRAW"], "Away win": row["P_AWAY"]}
-    return max(options, key=options.get)
-
-
 def football_view():
-    flog_path = os.path.join(BASE, "football_predictions_log.csv")
-    if os.path.exists(flog_path):
-        view = pd.read_csv(flog_path)
-        view["Match"] = view["HOME"] + " vs " + view["AWAY"]
-        view["League"] = view["LEAGUE"].map(LEAGUE_NAMES).fillna(view["LEAGUE"])
-        view["Most likely"] = view.apply(best_result, axis=1)
-        view["Home %"] = (view["P_HOME"] * 100).round(0)
-        view["Draw %"] = (view["P_DRAW"] * 100).round(0)
-        view["Away %"] = (view["P_AWAY"] * 100).round(0)
-        view["Over 2.5 %"] = (view["P_OVER25"] * 100).round(0)
-        view["Both score %"] = (view["P_BTTS"] * 100).round(0)
-        view["Expected goals"] = (
-            view["EXP_HOME_GOALS"].round(1).astype(str)
-            + " - "
-            + view["EXP_AWAY_GOALS"].round(1).astype(str)
-        )
-
-        league_choice = st.selectbox(
-            "League", ["All leagues"] + sorted(view["League"].unique())
-        )
-        if league_choice != "All leagues":
-            view = view[view["League"] == league_choice]
-        view = view.sort_values("DATE", ascending=False).head(60)
-
-        st.caption("Probabilities are model estimates, not guarantees.")
-        st.dataframe(
-            view[["DATE", "League", "Match", "Most likely", "Home %", "Draw %",
-                  "Away %", "Over 2.5 %", "Both score %", "Expected goals"]],
-            hide_index=True,
-        )
-    else:
-        st.info("No football predictions yet. They will appear here soon.")
+    show_football_predictions(BASE)
 
 
 sport = st.radio("Sport", ["Basketball (NBA)", "Football"], horizontal=True)
