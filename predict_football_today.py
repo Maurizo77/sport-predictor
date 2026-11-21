@@ -166,6 +166,9 @@ for fx in fixtures.itertuples():
         "LEAGUE": fx.Div,
         "HOME": fx.HomeTeam,
         "AWAY": fx.AwayTeam,
+        "ODDS_HOME": getattr(fx, "B365H", getattr(fx, "OddsHome", np.nan)),
+        "ODDS_DRAW": getattr(fx, "B365D", getattr(fx, "OddsDraw", np.nan)),
+        "ODDS_AWAY": getattr(fx, "B365A", getattr(fx, "OddsAway", np.nan)),
         "EVENT_TIME_WAT": football_event_time_wat(
             fx.Date,
             fx.Time,
@@ -199,6 +202,21 @@ p_draw = (grid * (i == j)).sum(axis=(1, 2))
 p_away = (grid * (i < j)).sum(axis=(1, 2))
 norm = p_home + p_draw + p_away
 p_home, p_draw, p_away = p_home / norm, p_draw / norm, p_away / norm
+
+# The chronological holdout found bookmaker-implied 1X2 probabilities were
+# more accurate than this goal model when complete pre-match prices existed.
+odds = X[["ODDS_HOME", "ODDS_DRAW", "ODDS_AWAY"]].apply(
+    pd.to_numeric, errors="coerce"
+).to_numpy(dtype=float)
+odds_available = np.isfinite(odds).all(axis=1) & (odds > 1).all(axis=1)
+market_probs = np.full_like(odds, np.nan, dtype=float)
+if odds_available.any():
+    implied = 1 / odds[odds_available]
+    market_probs[odds_available] = implied / implied.sum(axis=1, keepdims=True)
+p_home = np.where(odds_available, market_probs[:, 0], p_home)
+p_draw = np.where(odds_available, market_probs[:, 1], p_draw)
+p_away = np.where(odds_available, market_probs[:, 2], p_away)
+outcome_source = np.where(odds_available, "Bookmaker odds", "Model")
 p_o15 = (grid * (i + j > 1.5)).sum(axis=(1, 2))
 p_o25 = (grid * (i + j > 2.5)).sum(axis=(1, 2))
 p_o35 = (grid * (i + j > 3.5)).sum(axis=(1, 2))
@@ -240,18 +258,18 @@ for k in range(len(X)):
     # Keep one highest-probability option per match so the shortlist cannot
     # be filled with several overlapping markets from the same fixture.
     best_name = max(options, key=options.get)
-    picks.append((options[best_name], game, best_name))
+    picks.append((options[best_name], game, best_name, k))
 
 picks.sort(reverse=True)
 print()
 print("Most confident options (higher chance means lower odds):")
 shortlist = picks[:12]
-for prob, game, name in shortlist:
+for prob, game, name, _ in shortlist:
     print(" ", pct(prob), game, "->", name, "| fair odds", round(1 / prob, 2))
 
-best_by_game = {game: (name, prob) for prob, game, name in picks}
-bet_picks = [best_by_game[r["HOME"] + " vs " + r["AWAY"]][0] for _, r in X.iterrows()]
-bet_probs = [best_by_game[r["HOME"] + " vs " + r["AWAY"]][1] for _, r in X.iterrows()]
+best_by_index = {index: (name, prob) for prob, _, name, index in picks}
+bet_picks = [best_by_index[k][0] for k in range(len(X))]
+bet_probs = [best_by_index[k][1] for k in range(len(X))]
 
 log = pd.DataFrame({
     "DATE": X["DATE"], "EVENT_TIME_WAT": X["EVENT_TIME_WAT"],
@@ -259,15 +277,27 @@ log = pd.DataFrame({
     "P_HOME": p_home.round(3), "P_DRAW": p_draw.round(3), "P_AWAY": p_away.round(3),
     "P_OVER25": p_o25.round(3), "P_BTTS": p_btts.round(3),
     "EXP_HOME_GOALS": lam_home.round(2), "EXP_AWAY_GOALS": lam_away.round(2),
+    "ODDS_SOURCE": outcome_source,
     "BEST_PICK": bet_picks, "BEST_PICK_PROB": np.round(bet_probs, 3),
 })
 if os.path.exists(LOG_FILE):
     old = pd.read_csv(LOG_FILE)
-    old_keys = old["DATE"].astype(str) + old["HOME"] + old["AWAY"]
-    new_keys = log["DATE"].astype(str) + log["HOME"] + log["AWAY"]
-    # Refresh matching fixtures so new shortlist fields are recorded and
-    # reruns update predictions for fixtures that have not started yet.
-    old = old[~old_keys.isin(new_keys)]
+    old_keys = (
+        old["DATE"].astype(str) + "|" + old["LEAGUE"].astype(str) + "|"
+        + old["HOME"].astype(str) + "|" + old["AWAY"].astype(str)
+    )
+    new_keys = (
+        log["DATE"].astype(str) + "|" + log["LEAGUE"].astype(str) + "|"
+        + log["HOME"].astype(str) + "|" + log["AWAY"].astype(str)
+    )
+    local_today = pd.Timestamp.now(tz=FOOTBALL_FEED_TIMEZONE).date()
+    old_dates = pd.to_datetime(old["DATE"], errors="coerce").dt.date
+    locked_keys = set(old_keys[old_dates <= local_today])
+    # Keep the first saved forecast for today and earlier so result updates
+    # cannot rewrite a finished match's original prediction.
+    log = log[~new_keys.isin(locked_keys)]
+    new_keys = new_keys.loc[log.index]
+    old = old[~(old_keys.isin(new_keys) & (old_dates > local_today))]
     if "EVENT_TIME_WAT" not in old:
         old["EVENT_TIME_WAT"] = TIME_UNAVAILABLE
     columns = list(dict.fromkeys(list(old.columns) + list(log.columns)))
@@ -284,5 +314,9 @@ if os.path.exists(LOG_FILE):
             os.remove(temporary_path)
 else:
     log.to_csv(LOG_FILE, index=False)
+from football_feedback import update_feedback_file
+
+reviewed = update_feedback_file(BASE)
+print("Completed saved forecasts matched to results:", reviewed)
 print()
 print("Saved or refreshed", len(log), "predictions to", LOG_FILE)
