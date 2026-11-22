@@ -16,6 +16,7 @@ FILES = [
     "football_predictions_view.py",
     "football_market_odds.py",
     "football_feedback.py",
+    "football_market_features.py",
     "picks_view.py",
     "results_view.py",
     "team_names.py",
