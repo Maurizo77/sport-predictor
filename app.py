@@ -98,11 +98,9 @@ def basketball_view():
 
 
 def football_view():
-    tab_picks, tab_update = st.tabs(["Football picks", "Update"])
+    tab_picks, tab_results, tab_update = st.tabs(["Football picks", "Results / performance", "Update"])
 
     with tab_picks:
-        show_football_feedback(BASE)
-        st.divider()
         st.caption("Fetch the newest upcoming 49-match coupon from AbleFAST, or use your own list below.")
         if st.button("Fetch next coupon and refresh draw picks"):
             with st.spinner("Fetching the next coupon and rating all fixtures..."):
@@ -122,6 +120,9 @@ def football_view():
             st.code(output, language="text")
 
         show_football_predictions(BASE)
+
+    with tab_results:
+        show_football_feedback(BASE)
 
     with tab_update:
         st.write("Downloads the latest finished football matches (takes a few minutes).")
