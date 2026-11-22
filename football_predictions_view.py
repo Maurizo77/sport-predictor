@@ -2,8 +2,11 @@ import os
 
 import pandas as pd
 import streamlit as st
+from scipy.stats import poisson
+from sklearn.isotonic import IsotonicRegression
 
 from football_feedback import FEEDBACK_FILE, build_feedback, update_feedback_file
+from football_market_features import FEATURE_GROUPS
 
 
 LEAGUE_NAMES = {
@@ -24,6 +27,7 @@ REQUIRED_COLUMNS = {
     "DATE", "LEAGUE", "HOME", "AWAY", "P_HOME", "P_DRAW", "P_AWAY",
     "P_OVER25", "P_BTTS", "EXP_HOME_GOALS", "EXP_AWAY_GOALS",
 }
+CALIBRATION_MIN_SAMPLES = 50
 
 
 def show_football_predictions(base):
@@ -89,6 +93,15 @@ def show_football_predictions(base):
             str(int(round(row[column] * 100))) for column in model_probability_columns
         ), axis=1,
     )
+    view["Home win or draw (1X) %"] = (
+        view["_MODEL_HOME"] + view["_MODEL_DRAW"]
+    ).map(lambda value: f"{int(round(value * 100))}%")
+    view["Draw or away win (X2) %"] = (
+        view["_MODEL_DRAW"] + view["_MODEL_AWAY"]
+    ).map(lambda value: f"{int(round(value * 100))}%")
+    view["Either team to win (12) %"] = (
+        view["_MODEL_HOME"] + view["_MODEL_AWAY"]
+    ).map(lambda value: f"{int(round(value * 100))}%")
     probability_sets = {
         "1X2 market reference %": ("P_HOME_MARKET", "P_DRAW_MARKET", "P_AWAY_MARKET"),
     }
@@ -105,8 +118,8 @@ def show_football_predictions(base):
         if column in view.columns:
             view[column] = pd.to_numeric(view[column], errors="coerce")
     view["Expected goals"] = view.apply(
-        lambda row: "–" if pd.isna(row["EXP_HOME_GOALS"]) or pd.isna(row["EXP_AWAY_GOALS"])
-        else f"{row['EXP_HOME_GOALS']:.1f} – {row['EXP_AWAY_GOALS']:.1f}", axis=1,
+        lambda row: "—" if pd.isna(row["EXP_HOME_GOALS"]) or pd.isna(row["EXP_AWAY_GOALS"])
+        else f"Home {row['EXP_HOME_GOALS']:.1f} / Away {row['EXP_AWAY_GOALS']:.1f}", axis=1,
     )
     view["Over 2.5 model %"] = view["P_OVER25"].map(
         lambda value: "—" if pd.isna(value) else str(int(round(value * 100))) + "%"
@@ -123,62 +136,181 @@ def show_football_predictions(base):
             lambda value: "—" if pd.isna(value) else str(int(round(value * 100))) + "%"
         )
 
+    derived_probabilities = {
+        "P_HOME_OR_DRAW": view["_MODEL_HOME"] + view["_MODEL_DRAW"],
+        "P_DRAW_OR_AWAY": view["_MODEL_DRAW"] + view["_MODEL_AWAY"],
+        "P_HOME_OR_AWAY": view["_MODEL_HOME"] + view["_MODEL_AWAY"],
+        "P_UNDER25": 1 - view["P_OVER25"],
+        "P_BTTS_NO": 1 - view["P_BTTS"],
+    }
+    total_goal_rate = view["EXP_HOME_GOALS"] + view["EXP_AWAY_GOALS"]
+    derived_probabilities["P_OVER15"] = pd.Series(poisson.sf(1, total_goal_rate), index=view.index)
+    derived_probabilities["P_UNDER15"] = 1 - derived_probabilities["P_OVER15"]
+    derived_probabilities["P_OVER35"] = pd.Series(poisson.sf(3, total_goal_rate), index=view.index)
+    derived_probabilities["P_UNDER35"] = 1 - derived_probabilities["P_OVER35"]
+    for target, source in {
+        "P_NO_FIRST_HALF_GOAL": "P_FIRST_HALF_GOAL",
+        "P_FIRST_HALF_UNDER15": "P_FIRST_HALF_2PLUS",
+        "P_UNDER85_CORNERS": "P_OVER85_CORNERS",
+        "P_UNDER215_SHOTS": "P_OVER215_SHOTS",
+        "P_UNDER75_SHOTS_ON_TARGET": "P_OVER75_SHOTS_ON_TARGET",
+        "P_UNDER35_YELLOW_CARDS": "P_OVER35_YELLOW_CARDS",
+        "P_UNDER215_FOULS": "P_OVER215_FOULS",
+        "P_UNDER25_OFFSIDES": "P_OVER25_OFFSIDES",
+        "P_NO_RED_CARD": "P_ANY_RED_CARD",
+    }.items():
+        if source in view.columns:
+            derived_probabilities[target] = 1 - pd.to_numeric(view[source], errors="coerce")
+    for target, fallback in derived_probabilities.items():
+        fallback = pd.to_numeric(fallback, errors="coerce")
+        if target in view.columns:
+            view[target] = pd.to_numeric(view[target], errors="coerce").fillna(fallback)
+        else:
+            view[target] = fallback
+
     today = pd.Timestamp.now().normalize()
     upcoming = view[view["DATE"] >= today]
     latest_date = view["DATE"].max().strftime("%Y-%m-%d")
     c1, c2, c3 = st.columns(3)
-    c1.metric("Upcoming fixtures", len(upcoming))
-    c2.metric("Leagues covered", view["League"].nunique())
+    c1.metric("Fixtures screened", len(upcoming))
+    c2.metric("Prediction features", len(FEATURE_GROUPS))
     c3.metric("Latest prediction date", latest_date)
 
-    if {"BEST_PICK", "BEST_PICK_PROB"}.issubset(view.columns):
-        shortlist_source = upcoming
-        if "BEST_PICK_SOURCE" in shortlist_source.columns:
-            shortlist_source = shortlist_source[
-                shortlist_source["BEST_PICK_SOURCE"].eq("Poisson model")
-            ]
-        shortlist = shortlist_source.dropna(subset=["BEST_PICK", "BEST_PICK_PROB"]).copy()
-        if not shortlist.empty:
-            shortlist["BEST_PICK_PROB"] = pd.to_numeric(
-                shortlist["BEST_PICK_PROB"], errors="coerce"
+    historical_feedback = build_feedback(base)
+    feature_calibrators = {}
+    calibration_counts = {}
+    for _group, markets in FEATURE_GROUPS.items():
+        for key, _label, _probability_column, _actual_event in markets:
+            probability_column = "FEATURE_PROB_" + key
+            hit_column = "FEATURE_HIT_" + key
+            if probability_column not in historical_feedback or hit_column not in historical_feedback:
+                calibration_counts[key] = 0
+                continue
+            historical_probability = pd.to_numeric(
+                historical_feedback[probability_column], errors="coerce"
             )
-            shortlist = shortlist.dropna(subset=["BEST_PICK_PROB"])
-            shortlist = shortlist.sort_values(
-                "BEST_PICK_PROB", ascending=False
-            ).head(12)
-            if not shortlist.empty:
-                st.subheader("Top picks (up to 12)")
-                st.caption(
-                    "One highest-probability option per match, ranked using the model's "
-                    "own estimates. Bookmaker prices are reference only; estimates are not guarantees."
+            historical_hit = historical_feedback[hit_column].astype("boolean")
+            valid = historical_probability.notna() & historical_hit.notna()
+            calibration_counts[key] = int(valid.sum())
+            if (
+                valid.sum() >= CALIBRATION_MIN_SAMPLES
+                and historical_probability.loc[valid].nunique() >= 5
+                and historical_hit.loc[valid].nunique() == 2
+            ):
+                calibrator = IsotonicRegression(
+                    y_min=0, y_max=1, out_of_bounds="clip"
                 )
-                shortlist["Estimated chance"] = shortlist["BEST_PICK_PROB"].map(
-                    lambda value: str(int(round(value * 100))) + "%"
+                calibrator.fit(
+                    historical_probability.loc[valid].to_numpy(dtype=float),
+                    historical_hit.loc[valid].astype(int).to_numpy(),
                 )
-                shortlist_display = shortlist.assign(
-                        Date=shortlist["DATE"].dt.strftime("%Y-%m-%d"),
-                        Match=shortlist["HOME"].astype(str) + " vs " + shortlist["AWAY"].astype(str),
-                        Pick=shortlist["BEST_PICK"],
-                    )
-                shortlist_columns = ["Date", "EVENT_TIME_WAT", "LEAGUE", "Match", "Pick", "Estimated chance"]
-                if "BEST_PICK_SOURCE" in shortlist_display:
-                    shortlist_display["Pick source"] = shortlist_display["BEST_PICK_SOURCE"]
-                    shortlist_columns.append("Pick source")
+                feature_calibrators[key] = calibrator
+
+    confidence_floor = st.slider(
+        "Minimum model confidence in feature lists", min_value=50, max_value=95,
+        value=70, step=5, key="football_feature_confidence",
+    ) / 100
+    st.caption(
+        "Open a feature heading to see all qualifying upcoming selections ranked by confidence. "
+        "One match can appear under several features. Confidence is an estimate, not a guarantee."
+    )
+    overall_candidates = []
+    for group, markets in FEATURE_GROUPS.items():
+        for key, label, probability_column, _actual_event in markets:
+            if probability_column not in upcoming.columns:
+                continue
+            for row_index, probability in pd.to_numeric(
+                upcoming[probability_column], errors="coerce"
+            ).dropna().items():
+                raw_probability = float(probability)
+                if raw_probability < confidence_floor:
+                    continue
+                calibrator = feature_calibrators.get(key)
+                adjusted_probability = (
+                    float(calibrator.predict([raw_probability])[0])
+                    if calibrator is not None else raw_probability
+                )
+                if adjusted_probability < confidence_floor:
+                    continue
+                row = upcoming.loc[row_index]
+                overall_candidates.append({
+                    "DATE": row["DATE"], "LEAGUE": row["LEAGUE"],
+                    "HOME": row["HOME"], "AWAY": row["AWAY"],
+                    "Kickoff (WAT)": row["Kickoff (WAT)"],
+                    "Match": row["Match"], "Feature": group,
+                    "Selection": label, "Model estimate": raw_probability,
+                    "Adjusted confidence": adjusted_probability,
+                    "Completed feature forecasts": calibration_counts.get(key, 0),
+                })
+    if overall_candidates:
+        overall = pd.DataFrame(overall_candidates).sort_values(
+            "Adjusted confidence", ascending=False, kind="mergesort"
+        )
+        overall = overall.drop_duplicates(
+            ["DATE", "LEAGUE", "HOME", "AWAY"], keep="first"
+        ).head(12).copy()
+        overall.insert(0, "Rank", range(1, len(overall) + 1))
+        overall["Date"] = pd.to_datetime(overall["DATE"]).dt.strftime("%Y-%m-%d")
+        overall["Model estimate"] = overall["Model estimate"].map(lambda value: f"{value:.0%}")
+        overall["Adjusted confidence"] = overall["Adjusted confidence"].map(lambda value: f"{value:.0%}")
+        overall["History"] = overall["Completed feature forecasts"].map(
+            lambda count: f"{count} picks" if count >= CALIBRATION_MIN_SAMPLES else f"{count} picks; raw estimate used"
+        )
+        st.subheader(f"Top {len(overall)} unique high-confidence predictions")
+        st.caption(
+            "One strongest selection per fixture, ranked by estimated confidence. When a feature has at least "
+            f"{CALIBRATION_MIN_SAMPLES} completed forecasts, its probability is adjusted using prior outcomes; "
+            f"otherwise the model estimate is shown unchanged. Only selections at or above {confidence_floor:.0%} "
+            "are included. Bookmaker odds do not affect this list."
+        )
+        st.dataframe(
+            overall[[
+                "Rank", "Date", "Kickoff (WAT)", "LEAGUE", "Match", "Feature", "Selection",
+                "Model estimate", "Adjusted confidence", "History",
+            ]],
+            hide_index=True, use_container_width=True,
+        )
+    else:
+        st.info("No upcoming selection meets the current confidence filter. Lower the threshold to review more games.")
+
+    for group, markets in FEATURE_GROUPS.items():
+        selections = []
+        for _key, label, probability_column, _actual_event in markets:
+            if probability_column not in upcoming.columns:
+                continue
+            probabilities = pd.to_numeric(upcoming[probability_column], errors="coerce")
+            qualified = upcoming.loc[probabilities >= confidence_floor].copy()
+            if qualified.empty:
+                continue
+            qualified["Selection"] = label
+            qualified["Model confidence"] = probabilities.loc[qualified.index]
+            selections.append(qualified[[
+                "DATE", "Kickoff (WAT)", "League", "Match", "Selection", "Model confidence",
+            ]])
+        feature_rows = pd.concat(selections, ignore_index=True) if selections else pd.DataFrame()
+        if not feature_rows.empty:
+            feature_rows = feature_rows.sort_values("Model confidence", ascending=False)
+            feature_rows["Date"] = pd.to_datetime(feature_rows["DATE"]).dt.strftime("%Y-%m-%d")
+            feature_rows["Model confidence"] = feature_rows["Model confidence"].map(lambda value: f"{value:.0%}")
+            match_count = feature_rows[["DATE", "League", "Match"]].drop_duplicates().shape[0]
+        else:
+            match_count = 0
+        with st.expander(f"{group} — {len(feature_rows)} selections across {match_count} matches"):
+            if feature_rows.empty:
+                st.info("No upcoming selection meets the current confidence filter for this feature.")
+            else:
                 st.dataframe(
-                    shortlist_display[shortlist_columns],
-                    hide_index=True,
-                    use_container_width=True,
+                    feature_rows[["Date", "Kickoff (WAT)", "League", "Match", "Selection", "Model confidence"]],
+                    hide_index=True, use_container_width=True,
                 )
 
-    period = st.radio(
-        "Fixtures", ["Upcoming", "All saved"], horizontal=True,
-        key="football_fixture_period",
-    )
-    if period == "Upcoming":
-        view = upcoming.copy()
-        if view.empty:
-            st.info("No upcoming fixtures are saved. Choose ‘All saved’ to review older predictions.")
-            return
+    if not st.checkbox("Show full fixture table and optional match-stat estimates", value=False):
+        return
+    period = st.radio("Fixtures", ["Upcoming", "All saved"], horizontal=True, key="football_fixture_period")
+    view = upcoming.copy() if period == "Upcoming" else view.copy()
+    if view.empty:
+        st.info("No fixtures are available in this view.")
+        return
 
     league_choice = st.selectbox(
         "League", ["All leagues"] + sorted(view["League"].dropna().unique().tolist()),
@@ -186,18 +318,22 @@ def show_football_predictions(base):
     )
     if league_choice != "All leagues":
         view = view[view["League"] == league_choice]
-    view = view.sort_values("DATE", ascending=False).head(60).copy()
+    view = view.sort_values("DATE", ascending=False)
+    view = view.head(60).copy()
     view["DATE"] = view["DATE"].dt.strftime("%Y-%m-%d")
 
     st.caption(
-        "All percentages are uncertain estimates, never guarantees. Model estimates drive "
-        "the predictions and shortlist. Bookmaker 1X2, Over 2.5 and BTTS prices are separate "
-        "reference estimates and do not change the model's picks."
+        "All percentages are uncertain estimates, never guarantees. Feature lists use model estimates. "
+        "Bookmaker 1X2, Over 2.5 and BTTS prices are separate "
+        "reference estimates and do not change the model's picks. 1X2 is home/draw/away; "
+        "1X means home-or-draw, X2 means draw-or-away, and 12 means either team wins."
     )
     display_columns = [
         "DATE", "Kickoff (WAT)", "League", "Match", "Most likely", "Model 1X2 %",
-        "Expected goals", "Over 2.5 model %", "BTTS model %",
+        "Home win or draw (1X) %", "Draw or away win (X2) %",
+        "Either team to win (12) %", "Expected goals (home / away)", "Over 2.5 model %", "BTTS model %",
     ]
+    view["Expected goals (home / away)"] = view["Expected goals"]
     if "1X2 market reference %" in view.columns:
         display_columns.insert(6, "1X2 market reference %")
     if "P_OVER25_MARKET" in view.columns:
@@ -370,29 +506,220 @@ def show_football_feedback(base):
         )
         return
 
-    st.subheader("How past football predictions performed")
+    for column in feedback.columns:
+        if column == "BEST_PICK_CORRECT" or column.startswith("FEATURE_HIT_"):
+            feedback[column] = feedback[column].map(
+                lambda value: pd.NA if pd.isna(value) else str(value).strip().lower() in {"true", "1"}
+            ).astype("boolean")
+
+    st.subheader("Football model performance")
     st.caption(
-        "Scored only after actual results are present in the football history. "
-        "After the history changes, the next prediction run retrains on those real results; "
-        "the model never treats its own guesses as training data."
+        "Only completed matches with actual scores in the refreshed football history are counted. "
+        "✓ means the model's most likely 1X2 outcome was correct; ✗ means it was wrong. "
+        "Use the sample counts alongside the percentages: a few matches are not enough to judge accuracy. "
+        "Lower log loss, Brier score, and mean absolute error are better."
     )
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Completed forecasts", len(feedback))
-    c2.metric("1X2 accuracy", str(round(feedback["CORRECT"].mean() * 100)) + "%")
-    c3.metric("Mean log loss", round(feedback["LOG_LOSS"].mean(), 3))
-    st.caption("Accuracy by league is only informative after a meaningful number of completed matches.")
+    completed = len(feedback)
+    goal_mae = pd.to_numeric(feedback["TOTAL_GOAL_ERROR"], errors="coerce").mean()
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Completed matches", completed)
+    c2.metric("1X2 correct", f"{feedback['CORRECT'].mean():.0%}", f"{int(feedback['CORRECT'].sum())} of {completed}")
+    c3.metric("Avg total-goal error", "—" if pd.isna(goal_mae) else f"{goal_mae:.2f} goals")
+    c4.metric("Mean log loss", f"{feedback['LOG_LOSS'].mean():.3f}")
+    c5.metric("Mean Brier score", f"{feedback['BRIER_SCORE'].mean():.3f}")
+
+    score_rows = []
+    score_rows.append({
+        "Prediction market": "Full-time result (1X2)", "Matches scored": completed,
+        "Correct": int(feedback["CORRECT"].sum()), "Accuracy": feedback["CORRECT"].mean(),
+    })
+    if "BEST_PICK_CORRECT" in feedback:
+        best = feedback["BEST_PICK_CORRECT"].dropna().astype(bool)
+        if not best.empty:
+            score_rows.append({
+                "Prediction market": "Saved highest-probability pick (market varies by forecast)",
+                "Matches scored": len(best), "Correct": int(best.sum()), "Accuracy": best.mean(),
+            })
+    confidence_floor = float(st.session_state.get("football_feature_confidence", 70)) / 100
+    feature_history = {}
+    for group, markets in FEATURE_GROUPS.items():
+        group_history = []
+        for key, label, _probability_column, _actual_event in markets:
+            prob_column = "FEATURE_PROB_" + key
+            hit_column = "FEATURE_HIT_" + key
+            if prob_column not in feedback or hit_column not in feedback:
+                continue
+            probabilities = pd.to_numeric(feedback[prob_column], errors="coerce")
+            eligible = (probabilities >= confidence_floor) & feedback[hit_column].notna()
+            scored = feedback.loc[eligible].copy()
+            if scored.empty:
+                continue
+            hits = scored[hit_column].astype(bool)
+            score_rows.append({
+                "Prediction market": f"{group}: {label}",
+                "Matches scored": len(scored), "Correct": int(hits.sum()),
+                "Accuracy": hits.mean(),
+            })
+            scored["Selection"] = label
+            scored["Model confidence"] = probabilities.loc[scored.index]
+            scored["Feature result"] = hits.map({True: "✓ Correct", False: "✗ Incorrect"})
+            scored["Actual score"] = (
+                scored["FTHG"].astype(int).astype(str) + "–" + scored["FTAG"].astype(int).astype(str)
+            )
+            group_history.append(scored)
+        feature_history[group] = pd.concat(group_history, ignore_index=False) if group_history else pd.DataFrame()
+    if score_rows:
+        performance = pd.DataFrame(score_rows)
+        performance["Correct / scored"] = performance.apply(
+            lambda row: f"{int(row['Correct'])} / {int(row['Matches scored'])}", axis=1
+        )
+        performance["Accuracy"] = performance["Accuracy"].map(lambda value: f"{value:.0%}")
+        st.markdown("**Accuracy by prediction market**")
+        st.dataframe(
+            performance[["Prediction market", "Correct / scored", "Accuracy"]],
+            hide_index=True, use_container_width=True,
+        )
+
+    st.markdown("**Completed selections by feature**")
+    st.caption(
+        f"Each row is scored against its own result when available. The accuracy tables use the current "
+        f"{confidence_floor:.0%} confidence filter, so one match may count under multiple features."
+    )
+    for group, _markets in FEATURE_GROUPS.items():
+        history = feature_history.get(group, pd.DataFrame())
+        if history.empty:
+            with st.expander(f"{group} — no completed selections at {confidence_floor:.0%}+"):
+                st.info("Completed match data for this feature will appear after the results are refreshed.")
+            continue
+        correct_count = int((history["Feature result"] == "✓ Correct").sum())
+        with st.expander(
+            f"{group} — {correct_count} of {len(history)} correct at {confidence_floor:.0%}+"
+        ):
+            scored_history = history.copy()
+            scored_history["Date"] = pd.to_datetime(scored_history["DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
+            scored_history["Model confidence"] = scored_history["Model confidence"].map(lambda value: f"{value:.0%}")
+            scored_history["Match"] = scored_history["HOME"].astype(str) + " vs " + scored_history["AWAY"].astype(str)
+            st.dataframe(
+                scored_history[["Date", "LEAGUE", "Match", "Selection", "Model confidence", "Feature result", "Actual score"]],
+                hide_index=True, use_container_width=True,
+            )
+
+    error_labels = {
+        "HOME_GOAL_ERROR": "Home goals", "AWAY_GOAL_ERROR": "Away goals",
+        "TOTAL_GOAL_ERROR": "Total goals", "ERROR_EXP_HOME_CORNERS": "Home corners",
+        "ERROR_EXP_AWAY_CORNERS": "Away corners", "ERROR_EXP_HOME_SHOTS": "Home shots",
+        "ERROR_EXP_AWAY_SHOTS": "Away shots", "ERROR_EXP_HOME_SHOTS_ON_TARGET": "Home shots on target",
+        "ERROR_EXP_AWAY_SHOTS_ON_TARGET": "Away shots on target", "ERROR_EXP_HOME_FOULS": "Home fouls",
+        "ERROR_EXP_AWAY_FOULS": "Away fouls", "ERROR_EXP_HOME_OFFSIDES": "Home offsides",
+        "ERROR_EXP_AWAY_OFFSIDES": "Away offsides", "ERROR_EXP_HOME_HT_GOALS": "Home first-half goals",
+        "ERROR_EXP_AWAY_HT_GOALS": "Away first-half goals", "ERROR_EXP_HOME_YELLOW_CARDS": "Home yellow cards",
+        "ERROR_EXP_AWAY_YELLOW_CARDS": "Away yellow cards", "ERROR_EXP_HOME_RED_CARDS": "Home red cards",
+        "ERROR_EXP_AWAY_RED_CARDS": "Away red cards",
+    }
+    error_rows = []
+    for column, label in error_labels.items():
+        if column in feedback:
+            errors = pd.to_numeric(feedback[column], errors="coerce").dropna()
+            if not errors.empty:
+                error_rows.append({
+                    "Estimate": label, "Matches scored": len(errors),
+                    "Mean absolute error": round(errors.mean(), 2),
+                })
+    if error_rows:
+        with st.expander("How close were the model's number estimates?"):
+            st.caption("Mean absolute error: the average distance between the model estimate and the actual count.")
+            st.dataframe(pd.DataFrame(error_rows), hide_index=True, use_container_width=True)
+
+    if {"BEST_PICK_PROB", "BEST_PICK_CORRECT"}.issubset(feedback.columns):
+        confidence = feedback.assign(
+            CONFIDENCE=pd.to_numeric(feedback["BEST_PICK_PROB"], errors="coerce"),
+            CONFIDENCE_CORRECT=feedback["BEST_PICK_CORRECT"].astype("boolean"),
+        ).dropna(subset=["CONFIDENCE", "CONFIDENCE_CORRECT"])
+        high_confidence = confidence[confidence["CONFIDENCE"] >= confidence_floor]
+        if not high_confidence.empty:
+            high_hits = high_confidence["CONFIDENCE_CORRECT"].astype(bool)
+            st.metric(
+                f"Saved picks estimated at {confidence_floor:.0%}+",
+                f"{high_hits.mean():.0%} correct",
+                f"{int(high_hits.sum())} of {len(high_hits)} completed picks",
+            )
+    else:
+        confidence = feedback.assign(
+            CONFIDENCE=feedback[["P_HOME", "P_DRAW", "P_AWAY"]].max(axis=1),
+            CONFIDENCE_CORRECT=feedback["CORRECT"],
+        )
+    confidence_bins = [0.0, 0.5, 0.6, 0.7, 0.8, 1.01]
+    confidence_labels = ["Below 50%", "50–59%", "60–69%", "70–79%", "80%+"]
+    confidence["Confidence band"] = pd.cut(
+        confidence["CONFIDENCE"], bins=confidence_bins, labels=confidence_labels,
+        right=False, include_lowest=True,
+    )
+    by_confidence = confidence.groupby("Confidence band", observed=True)["CONFIDENCE_CORRECT"].agg(
+        Matches="size", Correct="sum", Accuracy="mean"
+    ).reset_index()
+    if not by_confidence.empty:
+        by_confidence["Correct / scored"] = by_confidence.apply(
+            lambda row: f"{int(row['Correct'])} / {int(row['Matches'])}", axis=1
+        )
+        by_confidence["Accuracy"] = by_confidence["Accuracy"].map(lambda value: f"{value:.0%}")
+        with st.expander("Accuracy by model confidence"):
+            st.dataframe(by_confidence[["Confidence band", "Correct / scored", "Accuracy"]], hide_index=True)
 
     league_names = feedback["LEAGUE"].map(LEAGUE_NAMES).fillna(feedback["LEAGUE"])
     by_league = feedback.assign(League=league_names).groupby("League").agg(
-        Games=("CORRECT", "size"), Correct=("CORRECT", "sum"),
+        Matches=("CORRECT", "size"), Correct=("CORRECT", "sum"),
         Accuracy=("CORRECT", "mean"), MeanLogLoss=("LOG_LOSS", "mean"),
     ).reset_index()
-    by_league["Accuracy"] = (by_league["Accuracy"] * 100).round(0).astype(int).astype(str) + "%"
+    by_league["Correct / scored"] = by_league.apply(
+        lambda row: f"{int(row['Correct'])} / {int(row['Matches'])}", axis=1
+    )
+    by_league["Accuracy"] = by_league["Accuracy"].map(lambda value: f"{value:.0%}")
     by_league["Mean log loss"] = by_league["MeanLogLoss"].round(3)
-    by_league = by_league.drop(columns="MeanLogLoss").sort_values("Games", ascending=False)
-    st.dataframe(by_league, hide_index=True, use_container_width=True)
+    by_league = by_league.drop(columns=["Correct", "MeanLogLoss"]).sort_values("Matches", ascending=False)
+    with st.expander("1X2 performance by league"):
+        st.dataframe(by_league, hide_index=True, use_container_width=True)
 
-    recent = feedback.head(12).copy()
+    # Surface repeatable weak spots from the model's own results. Require a
+    # minimum sample to avoid presenting a handful of misses as a real pattern.
+    pattern_history = feedback.copy()
+    pattern_history["Confidence"] = pattern_history[["P_HOME", "P_DRAW", "P_AWAY"]].max(axis=1)
+    pattern_history["Confidence band"] = pd.cut(
+        pattern_history["Confidence"], bins=[0, .6, .7, .8, 1.01],
+        labels=["Below 60%", "60–69%", "70–79%", "80%+"], right=False,
+    )
+    patterns = pattern_history.groupby(
+        ["LEAGUE", "PREDICTED_OUTCOME", "Confidence band"], observed=True
+    ).agg(
+        Matches=("CORRECT", "size"), Correct=("CORRECT", "sum"),
+        Accuracy=("CORRECT", "mean"), MeanLogLoss=("LOG_LOSS", "mean"),
+    ).reset_index()
+    patterns = patterns[patterns["Matches"] >= CALIBRATION_MIN_SAMPLES].copy()
+    if not patterns.empty:
+        patterns = patterns.sort_values(["Accuracy", "Matches"], ascending=[True, False])
+        with st.expander("Repeated 1X2 weak spots (50+ saved results)"):
+            st.caption(
+                "These are recurring associations in the saved results, not proof of a cause. "
+                "They are shown only after 50 comparable forecasts; self-calibration uses the "
+                "same minimum and learns from the model's earlier probabilities and outcomes."
+            )
+            patterns["Correct / scored"] = patterns.apply(
+                lambda row: f"{int(row['Correct'])} / {int(row['Matches'])}", axis=1
+            )
+            patterns["Accuracy"] = patterns["Accuracy"].map(lambda value: f"{value:.0%}")
+            patterns["Mean log loss"] = patterns["MeanLogLoss"].round(3)
+            st.dataframe(
+                patterns[["LEAGUE", "PREDICTED_OUTCOME", "Confidence band", "Correct / scored", "Accuracy", "Mean log loss"]],
+                hide_index=True, use_container_width=True,
+            )
+    else:
+        with st.expander("Repeated 1X2 weak spots"):
+            st.info(
+                f"No league, predicted-outcome, and confidence group has {CALIBRATION_MIN_SAMPLES} "
+                "completed forecasts yet. The app will wait for enough of its own results before "
+                "treating a repeated miss as a reliable learning signal."
+            )
+
+    recent = feedback.copy()
     recent["Date"] = pd.to_datetime(recent["DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
     recent["Match"] = recent["HOME"].astype(str) + " vs " + recent["AWAY"].astype(str)
     recent["Actual score"] = recent["FTHG"].astype(int).astype(str) + "–" + recent["FTAG"].astype(int).astype(str)
@@ -401,7 +728,24 @@ def show_football_feedback(base):
         axis=1,
     )
     recent_columns = ["Date", "LEAGUE", "Match", "Outcome check", "Actual score"]
+    if "BEST_PICK" in recent and "BEST_PICK_CORRECT" in recent:
+        recent["Best pick check"] = recent.apply(
+            lambda row: "—" if pd.isna(row["BEST_PICK_CORRECT"]) else
+            ("✓ " if bool(row["BEST_PICK_CORRECT"]) else "✗ ") + str(row["BEST_PICK"]), axis=1,
+        )
+        recent_columns.append("Best pick check")
+    for estimate, actual, label in (
+        ("EXP_HOME_GOALS", "EXP_AWAY_GOALS", "Expected goals (home–away)"),
+    ):
+        if {estimate, actual}.issubset(recent.columns):
+            recent[label] = recent.apply(
+                lambda row: f"{row[estimate]:.1f}–{row[actual]:.1f}" if pd.notna(row[estimate]) and pd.notna(row[actual]) else "—",
+                axis=1,
+            )
+            recent_columns.append(label)
+    recent["Total-goal error"] = pd.to_numeric(recent["TOTAL_GOAL_ERROR"], errors="coerce").round(2)
+    recent_columns.append("Total-goal error")
     if "ODDS_SOURCE" in recent.columns:
         recent_columns.append("ODDS_SOURCE")
-    st.caption("Most recent completed forecasts")
+    st.caption(f"Completed forecast record ({len(recent)} matches), newest first")
     st.dataframe(recent[recent_columns], hide_index=True, use_container_width=True)
