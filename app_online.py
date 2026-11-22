@@ -48,11 +48,13 @@ def basketball_view():
 
 
 def football_view():
-    show_football_feedback(BASE)
-    st.divider()
-    show_pool_draws(BASE)
-    st.divider()
-    show_football_predictions(BASE)
+    tab_picks, tab_results = st.tabs(["Football picks", "Results / performance"])
+    with tab_picks:
+        show_pool_draws(BASE)
+        st.divider()
+        show_football_predictions(BASE)
+    with tab_results:
+        show_football_feedback(BASE)
 
 
 sport = st.radio("Sport", ["Basketball (NBA)", "Football"], horizontal=True)
