@@ -88,7 +88,11 @@ def basketball_view():
             st.code(output, language="text")
 
         st.divider()
-        if st.button("Run everything: check results, update data, predict, injuries"):
+        st.caption(
+            "The prediction step checks whether nba_games.csv changed. If it did, the basketball "
+            "models retrain automatically before making new picks; if not, the saved models are reused."
+        )
+        if st.button("Update history, retrain if needed, and refresh picks"):
             for script in ["check_result.py", "get_all_seasons.py",
                            "predict_today.py", "injuries.py"]:
                 with st.spinner("Running " + script + " ..."):
