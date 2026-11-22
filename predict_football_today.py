@@ -7,9 +7,12 @@ import numpy as np
 import pandas as pd
 from scipy.stats import poisson
 from sklearn.linear_model import PoissonRegressor
+from sklearn.isotonic import IsotonicRegression
 
 from model_cache import load_model_cache, save_model_cache
 from football_market_odds import fetch_football_market_odds
+from football_feedback import build_feedback
+from football_market_features import FEATURE_GROUPS
 from event_time import (
     FOOTBALL_FEED_TIMEZONE,
     TIME_UNAVAILABLE,
@@ -25,6 +28,7 @@ FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"
 FIXTURE_CACHE = os.path.join(BASE, ".cache", "football_fixtures.csv")
 MAX_FIXTURE_CACHE_AGE_DAYS = 3
 DAYS_AHEAD = 14
+MIN_TOP_PICK_CONFIDENCE = 0.70
 CACHE_NAME = "football_training.joblib"
 CACHE_VERSION = 4
 
@@ -391,6 +395,69 @@ p_btts_market = pd.to_numeric(X["P_BTTS_MARKET"], errors="coerce").to_numpy(dtyp
 has_o25_market = np.isfinite(p_o25_market)
 has_btts_market = np.isfinite(p_btts_market)
 
+# Learn a probability correction from the model's own saved forecasts and
+# completed results. Only forecasts from before today are eligible, and the
+# raw model probabilities remain in the log so the learning step can be audited.
+CALIBRATION_MIN_SAMPLES = 50
+historical_feedback = build_feedback(BASE)
+today_cutoff = pd.Timestamp.now(tz=FOOTBALL_FEED_TIMEZONE).normalize().tz_localize(None)
+if not historical_feedback.empty:
+    historical_feedback["DATE"] = pd.to_datetime(historical_feedback["DATE"], errors="coerce")
+    historical_feedback = historical_feedback[historical_feedback["DATE"] < today_cutoff]
+
+learned_probabilities = {
+    "home_win": p_home.copy(), "draw": p_draw.copy(), "away_win": p_away.copy(),
+    "over15": p_o15.copy(), "over25": p_o25_model.copy(), "over35": p_o35.copy(),
+    "btts_yes": p_btts_model.copy(),
+}
+self_calibration_counts = {}
+self_calibrated_features = set()
+for feature_key in learned_probabilities:
+    probability_column = "FEATURE_PROB_" + feature_key
+    hit_column = "FEATURE_HIT_" + feature_key
+    if probability_column not in historical_feedback or hit_column not in historical_feedback:
+        self_calibration_counts[feature_key] = 0
+        continue
+    history_probability = pd.to_numeric(historical_feedback[probability_column], errors="coerce")
+    history_hit = historical_feedback[hit_column].astype("boolean")
+    valid = history_probability.notna() & history_hit.notna()
+    self_calibration_counts[feature_key] = int(valid.sum())
+    if (
+        valid.sum() >= CALIBRATION_MIN_SAMPLES
+        and history_probability.loc[valid].nunique() >= 5
+        and history_hit.loc[valid].nunique() == 2
+    ):
+        calibrator = IsotonicRegression(y_min=0, y_max=1, out_of_bounds="clip")
+        calibrator.fit(
+            history_probability.loc[valid].to_numpy(dtype=float),
+            history_hit.loc[valid].astype(int).to_numpy(),
+        )
+        learned_probabilities[feature_key] = calibrator.predict(
+            learned_probabilities[feature_key]
+        )
+        self_calibrated_features.add(feature_key)
+
+# Keep mutually exclusive 1X2 probabilities coherent after calibration.
+learned_1x2_total = sum(learned_probabilities[key] for key in ("home_win", "draw", "away_win"))
+for key in ("home_win", "draw", "away_win"):
+    learned_probabilities[key] = np.divide(
+        learned_probabilities[key], learned_1x2_total,
+        out=np.full(len(X), 1 / 3, dtype=float), where=learned_1x2_total > 0,
+    )
+self_calibrated = bool(self_calibrated_features)
+if historical_feedback.empty:
+    print("Self-calibration: no earlier completed saved forecasts; raw probabilities will be used.")
+elif not self_calibrated:
+    largest_sample = max(self_calibration_counts.values(), default=0)
+    print(
+        "Self-calibration: ", largest_sample,
+        "earlier completed forecast(s); at least", CALIBRATION_MIN_SAMPLES,
+        "with varied outcomes are required. Raw probabilities will be used.",
+        sep="",
+    )
+else:
+    print("Self-calibration applied using earlier completed saved forecasts.")
+
 
 def pct(x):
     return str(round(x * 100)) + "%"
@@ -398,91 +465,36 @@ def pct(x):
 
 picks = []
 
-print("Predictions for matches in the next", DAYS_AHEAD, "days")
 for k in range(len(X)):
-    r = X.iloc[k]
-    game = r["HOME"] + " vs " + r["AWAY"]
-    flat = grid[k].flatten()
-    best = flat.argsort()[::-1][:3]
-    top_scores = ", ".join(str(b // 11) + "-" + str(b % 11) + " " + pct(flat[b]) for b in best)
-    print()
-    print(r["LEAGUE"], r["DATE"], "| kickoff", r["EVENT_TIME_WAT"], "|", game)
-    print("  Model 1X2 estimates (not certainties): " + pct(p_home[k]) + " / " + pct(p_draw[k]) + " / " + pct(p_away[k]))
-    print("  Double chance 1X / X2 / 12: " + pct(p_home[k] + p_draw[k]) + " / "
-          + pct(p_draw[k] + p_away[k]) + " / " + pct(p_home[k] + p_away[k]))
-    print("  Over 1.5 / 2.5 / 3.5 goals: " + pct(p_o15[k]) + " / " + pct(p_o25[k]) + " / " + pct(p_o35[k]))
-    print("  Both teams score: " + pct(p_btts[k]))
-    if np.isfinite(exp_home_corners[k]) and np.isfinite(exp_away_corners[k]):
-        print("  Model expected corners (home / away):", round(exp_home_corners[k], 1), "/", round(exp_away_corners[k], 1))
-    if np.isfinite(exp_home_shots[k]) and np.isfinite(exp_away_shots[k]):
-        print("  Model expected shots (home / away):", round(exp_home_shots[k], 1), "/", round(exp_away_shots[k], 1))
-    if np.isfinite(exp_home_shots_on_target[k]) and np.isfinite(exp_away_shots_on_target[k]):
-        print("  Model expected shots on target (home / away):", round(exp_home_shots_on_target[k], 1), "/", round(exp_away_shots_on_target[k], 1))
-    if np.isfinite(exp_home_fouls[k]) and np.isfinite(exp_away_fouls[k]):
-        print("  Model expected fouls (home / away):", round(exp_home_fouls[k], 1), "/", round(exp_away_fouls[k], 1))
-    if np.isfinite(exp_home_offsides[k]) and np.isfinite(exp_away_offsides[k]):
-        print("  Model expected offsides (home / away):", round(exp_home_offsides[k], 1), "/", round(exp_away_offsides[k], 1))
-    if np.isfinite(exp_home_ht_goals[k]) and np.isfinite(exp_away_ht_goals[k]):
-        print("  Model expected first-half goals (home / away):", round(exp_home_ht_goals[k], 2), "/", round(exp_away_ht_goals[k], 2))
-        print("  Model chance of 1+ / 2+ first-half goals:", pct(p_first_half_goal[k]), "/", pct(p_first_half_2plus[k]))
-        print("  Model first-half home / draw / away:", pct(p_ht_home[k]), "/", pct(p_ht_draw[k]), "/", pct(p_ht_away[k]))
-    if np.isfinite(exp_home_red_cards[k]) and np.isfinite(exp_away_red_cards[k]):
-        print("  Model chance of at least one red card:", pct(p_any_red_card[k]))
-    if np.isfinite(exp_home_yellow_cards[k]) and np.isfinite(exp_away_yellow_cards[k]):
-        print("  Model expected yellow cards (home / away):", round(exp_home_yellow_cards[k], 1), "/", round(exp_away_yellow_cards[k], 1))
-    if has_o25_market[k]:
-        print("  Bookmaker Over 2.5 estimate:", pct(p_o25_market[k]), "|", X.iloc[k]["OVER25_SOURCE"])
-    if has_btts_market[k]:
-        print("  Bookmaker BTTS estimate:", pct(p_btts_market[k]), "|", X.iloc[k]["BTTS_SOURCE"])
-    if odds_available[k]:
-        print("  Bookmaker 1X2 reference:", pct(market_probs[k, 0]), "/", pct(market_probs[k, 1]), "/", pct(market_probs[k, 2]))
-    print("  Likely scores: " + top_scores)
+    game = X.iloc[k]["HOME"] + " vs " + X.iloc[k]["AWAY"]
 
     options = {
-        "Home win": p_home[k], "Draw": p_draw[k], "Away win": p_away[k],
-        "Home or draw": p_home[k] + p_draw[k],
-        "Draw or away": p_draw[k] + p_away[k],
-        "Home or away": p_home[k] + p_away[k],
-        "Over 1.5": p_o15[k], "Under 1.5": 1 - p_o15[k],
-        "Over 2.5": p_o25_model[k], "Under 2.5": 1 - p_o25_model[k],
-        "Over 3.5": p_o35[k], "Under 3.5": 1 - p_o35[k],
-        "BTTS yes": p_btts_model[k], "BTTS no": 1 - p_btts_model[k],
+        "Home win": learned_probabilities["home_win"][k],
+        "Draw": learned_probabilities["draw"][k],
+        "Away win": learned_probabilities["away_win"][k],
+        "Home win or draw (1X)": learned_probabilities["home_win"][k] + learned_probabilities["draw"][k],
+        "Draw or away win (X2)": learned_probabilities["draw"][k] + learned_probabilities["away_win"][k],
+        "Either team to win (12)": learned_probabilities["home_win"][k] + learned_probabilities["away_win"][k],
+        "Over 1.5": learned_probabilities["over15"][k],
+        "Under 1.5": 1 - learned_probabilities["over15"][k],
+        "Over 2.5": learned_probabilities["over25"][k],
+        "Under 2.5": 1 - learned_probabilities["over25"][k],
+        "Over 3.5": learned_probabilities["over35"][k],
+        "Under 3.5": 1 - learned_probabilities["over35"][k],
+        "BTTS yes": learned_probabilities["btts_yes"][k],
+        "BTTS no": 1 - learned_probabilities["btts_yes"][k],
     }
-    extra_options = {
-        "First-half home win": p_ht_home[k],
-        "First-half draw": p_ht_draw[k],
-        "First-half away win": p_ht_away[k],
-        "First-half goal": p_first_half_goal[k],
-        "No first-half goal": 1 - p_first_half_goal[k] if np.isfinite(p_first_half_goal[k]) else np.nan,
-        "2+ first-half goals": p_first_half_2plus[k],
-        "Under 1.5 first-half goals": 1 - p_first_half_2plus[k] if np.isfinite(p_first_half_2plus[k]) else np.nan,
-        "Red card": p_any_red_card[k],
-        "No red card": 1 - p_any_red_card[k] if np.isfinite(p_any_red_card[k]) else np.nan,
-        "Over 8.5 corners": p_over85_corners[k],
-        "Under 8.5 corners": 1 - p_over85_corners[k] if np.isfinite(p_over85_corners[k]) else np.nan,
-        "Over 21.5 shots": p_over215_shots[k],
-        "Under 21.5 shots": 1 - p_over215_shots[k] if np.isfinite(p_over215_shots[k]) else np.nan,
-        "Over 7.5 shots on target": p_over75_shots_on_target[k],
-        "Under 7.5 shots on target": 1 - p_over75_shots_on_target[k] if np.isfinite(p_over75_shots_on_target[k]) else np.nan,
-        "Over 3.5 yellow cards": p_over35_yellow_cards[k],
-        "Under 3.5 yellow cards": 1 - p_over35_yellow_cards[k] if np.isfinite(p_over35_yellow_cards[k]) else np.nan,
-        "Over 21.5 fouls": p_over215_fouls[k],
-        "Under 21.5 fouls": 1 - p_over215_fouls[k] if np.isfinite(p_over215_fouls[k]) else np.nan,
-        "Over 2.5 offsides": p_over25_offsides[k],
-        "Under 2.5 offsides": 1 - p_over25_offsides[k] if np.isfinite(p_over25_offsides[k]) else np.nan,
-    }
-    options.update({name: prob for name, prob in extra_options.items() if np.isfinite(prob)})
-    # Keep one highest-probability option per match so the shortlist cannot
-    # be filled with several overlapping markets from the same fixture.
+    # Keep the legacy one-pick field for overall accuracy history. The app's
+    # visible feature sections rank each market independently from the columns below.
     best_name = max(options, key=options.get)
-    picks.append((options[best_name], game, best_name, k, "Poisson model"))
+    source = "Poisson model + self-calibration" if self_calibrated else "Poisson model"
+    picks.append((options[best_name], game, best_name, k, source))
 
 picks.sort(reverse=True)
 print()
-print("Highest estimated chances (probabilities are uncertain, not guarantees):")
-shortlist = picks[:12]
-for prob, game, name, _, source_name in shortlist:
-    print(" ", pct(prob), game, "->", name, "| source", source_name, "| model fair-odds estimate", round(1 / prob, 2))
+print("Fixtures screened:", len(X))
+print("Forecasts are grouped by feature in the app; the default feature-list threshold is",
+      pct(MIN_TOP_PICK_CONFIDENCE) + ".")
 
 best_by_index = {index: (name, prob, source_name) for prob, _, name, index, source_name in picks}
 bet_picks = [best_by_index[k][0] for k in range(len(X))]
@@ -493,12 +505,18 @@ log = pd.DataFrame({
     "DATE": X["DATE"], "EVENT_TIME_WAT": X["EVENT_TIME_WAT"],
     "LEAGUE": X["LEAGUE"], "HOME": X["HOME"], "AWAY": X["AWAY"],
     "P_HOME": p_home.round(3), "P_DRAW": p_draw.round(3), "P_AWAY": p_away.round(3),
+    "P_HOME_OR_DRAW": (p_home + p_draw).round(3),
+    "P_DRAW_OR_AWAY": (p_draw + p_away).round(3),
+    "P_HOME_OR_AWAY": (p_home + p_away).round(3),
     "P_HOME_MODEL": p_home_model.round(3), "P_DRAW_MODEL": p_draw_model.round(3),
     "P_AWAY_MODEL": p_away_model.round(3),
     "P_HOME_MARKET": market_probs[:, 0].round(3),
     "P_DRAW_MARKET": market_probs[:, 1].round(3),
     "P_AWAY_MARKET": market_probs[:, 2].round(3),
-    "P_OVER25": p_o25_model.round(3), "P_BTTS": p_btts_model.round(3),
+    "P_OVER15": p_o15.round(3), "P_UNDER15": (1 - p_o15).round(3),
+    "P_OVER25": p_o25_model.round(3), "P_UNDER25": (1 - p_o25_model).round(3),
+    "P_OVER35": p_o35.round(3), "P_UNDER35": (1 - p_o35).round(3),
+    "P_BTTS": p_btts_model.round(3), "P_BTTS_NO": (1 - p_btts_model).round(3),
     "P_OVER25_MARKET": p_o25_market.round(3), "P_BTTS_MARKET": p_btts_market.round(3),
     "OVER25_BOOKS": pd.to_numeric(X["OVER25_BOOKS"], errors="coerce"),
     "BTTS_BOOKS": pd.to_numeric(X["BTTS_BOOKS"], errors="coerce"),
@@ -507,28 +525,37 @@ log = pd.DataFrame({
     "EXP_HOME_CORNERS": np.round(exp_home_corners, 2),
     "EXP_AWAY_CORNERS": np.round(exp_away_corners, 2),
     "P_OVER85_CORNERS": np.round(p_over85_corners, 3),
+    "P_UNDER85_CORNERS": np.round(1 - p_over85_corners, 3),
     "EXP_HOME_SHOTS": np.round(exp_home_shots, 2),
     "EXP_AWAY_SHOTS": np.round(exp_away_shots, 2),
     "P_OVER215_SHOTS": np.round(p_over215_shots, 3),
+    "P_UNDER215_SHOTS": np.round(1 - p_over215_shots, 3),
     "EXP_HOME_SHOTS_ON_TARGET": np.round(exp_home_shots_on_target, 2),
     "EXP_AWAY_SHOTS_ON_TARGET": np.round(exp_away_shots_on_target, 2),
     "EXP_HOME_FOULS": np.round(exp_home_fouls, 2), "EXP_AWAY_FOULS": np.round(exp_away_fouls, 2),
     "EXP_HOME_OFFSIDES": np.round(exp_home_offsides, 2), "EXP_AWAY_OFFSIDES": np.round(exp_away_offsides, 2),
     "P_OVER75_SHOTS_ON_TARGET": np.round(p_over75_shots_on_target, 3),
+    "P_UNDER75_SHOTS_ON_TARGET": np.round(1 - p_over75_shots_on_target, 3),
     "P_OVER215_FOULS": np.round(p_over215_fouls, 3),
+    "P_UNDER215_FOULS": np.round(1 - p_over215_fouls, 3),
     "P_OVER25_OFFSIDES": np.round(p_over25_offsides, 3),
+    "P_UNDER25_OFFSIDES": np.round(1 - p_over25_offsides, 3),
     "EXP_HOME_HT_GOALS": np.round(exp_home_ht_goals, 2),
     "EXP_AWAY_HT_GOALS": np.round(exp_away_ht_goals, 2),
     "P_FIRST_HALF_GOAL": np.round(p_first_half_goal, 3),
+    "P_NO_FIRST_HALF_GOAL": np.round(1 - p_first_half_goal, 3),
     "P_FIRST_HALF_2PLUS": np.round(p_first_half_2plus, 3),
+    "P_FIRST_HALF_UNDER15": np.round(1 - p_first_half_2plus, 3),
     "P_HT_HOME": np.round(p_ht_home, 3), "P_HT_DRAW": np.round(p_ht_draw, 3),
     "P_HT_AWAY": np.round(p_ht_away, 3),
     "EXP_HOME_YELLOW_CARDS": np.round(exp_home_yellow_cards, 2),
     "EXP_AWAY_YELLOW_CARDS": np.round(exp_away_yellow_cards, 2),
     "P_OVER35_YELLOW_CARDS": np.round(p_over35_yellow_cards, 3),
+    "P_UNDER35_YELLOW_CARDS": np.round(1 - p_over35_yellow_cards, 3),
     "EXP_HOME_RED_CARDS": np.round(exp_home_red_cards, 3),
     "EXP_AWAY_RED_CARDS": np.round(exp_away_red_cards, 3),
     "P_ANY_RED_CARD": np.round(p_any_red_card, 3),
+    "P_NO_RED_CARD": np.round(1 - p_any_red_card, 3),
     "ODDS_SOURCE": outcome_source,
     "MARKET_1X2_SOURCE": np.where(odds_available, "Fixture bookmaker odds reference", ""),
     "BEST_PICK": bet_picks, "BEST_PICK_PROB": np.round(bet_probs, 3),
@@ -574,3 +601,21 @@ reviewed = update_feedback_file(BASE)
 print("Completed saved forecasts matched to results:", reviewed)
 print()
 print("Saved or refreshed", len(log), "predictions to", LOG_FILE)
+print("Selections meeting the default feature confidence threshold:")
+saved_forecasts = pd.read_csv(LOG_FILE)
+saved_forecasts["DATE"] = pd.to_datetime(saved_forecasts["DATE"], errors="coerce")
+saved_forecasts = saved_forecasts[saved_forecasts["DATE"] >= today]
+for group, markets in FEATURE_GROUPS.items():
+    count = 0
+    match_keys = set()
+    for _key, _label, probability_column, _actual_event in markets:
+        if probability_column not in saved_forecasts.columns:
+            continue
+        probability = pd.to_numeric(saved_forecasts[probability_column], errors="coerce")
+        selected = saved_forecasts.loc[probability >= MIN_TOP_PICK_CONFIDENCE]
+        count += len(selected)
+        match_keys.update(
+            selected["DATE"].astype(str) + "|" + selected["LEAGUE"].astype(str) + "|"
+            + selected["HOME"].astype(str) + "|" + selected["AWAY"].astype(str)
+        )
+    print(" ", group + ":", count, "selections across", len(match_keys), "matches")
