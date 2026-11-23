@@ -44,6 +44,13 @@ FILES = [
     "pool_picks.csv",
 ]
 
+requested_files = sys.argv[1:]
+unknown_files = sorted(set(requested_files) - set(FILES))
+if unknown_files:
+    print("Cannot publish unlisted files:", ", ".join(unknown_files))
+    raise SystemExit(2)
+files_to_publish = requested_files or FILES
+
 token = os.environ.get("GITHUB_TOKEN")
 if not token:
     print("No GITHUB_TOKEN found. Set it with setx, then reopen VS Code.")
@@ -55,7 +62,7 @@ headers = {
     "User-Agent": "sports-predictor-publisher",
 }
 
-for name in FILES:
+for name in files_to_publish:
     if not os.path.exists(name):
         print("Skipped (file not found):", name)
         continue
