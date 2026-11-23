@@ -313,9 +313,39 @@ def show_football_predictions(base):
         overall = pd.DataFrame(overall_candidates).sort_values(
             "Adjusted confidence", ascending=False, kind="mergesort"
         )
+        fixture_columns = ["DATE", "LEAGUE", "HOME", "AWAY"]
         overall = overall.drop_duplicates(
-            ["DATE", "LEAGUE", "HOME", "AWAY"], keep="first"
-        ).head(12).copy()
+            fixture_columns + ["Feature"], keep="first"
+        ).reset_index(drop=True)
+        target_count = min(
+            12, overall[fixture_columns].drop_duplicates().shape[0]
+        )
+        feature_count = overall["Feature"].nunique()
+        feature_limit = max(1, (target_count + feature_count - 1) // feature_count)
+        selected = []
+        selected_fixtures = set()
+        selected_by_feature = {}
+        while len(selected) < target_count:
+            eligible = overall[
+                ~overall.apply(
+                    lambda row: tuple(row[column] for column in fixture_columns)
+                    in selected_fixtures,
+                    axis=1,
+                )
+                & overall["Feature"].map(
+                    lambda feature: selected_by_feature.get(feature, 0) < feature_limit
+                )
+            ]
+            if eligible.empty:
+                feature_limit += 1
+                continue
+            pick = eligible.iloc[0]
+            selected.append(pick)
+            selected_fixtures.add(tuple(pick[column] for column in fixture_columns))
+            selected_by_feature[pick["Feature"]] = (
+                selected_by_feature.get(pick["Feature"], 0) + 1
+            )
+        overall = pd.DataFrame(selected).reset_index(drop=True)
         overall.insert(0, "Rank", range(1, len(overall) + 1))
         overall["Date"] = pd.to_datetime(overall["DATE"]).dt.strftime("%Y-%m-%d")
         overall["Model estimate"] = overall["Model estimate"].map(lambda value: f"{value:.0%}")
@@ -324,10 +354,11 @@ def show_football_predictions(base):
             lambda row: f"{row['Completed feature forecasts']} scored; "
             + ("calibrated" if row["Calibration applied"] else "raw estimate used"), axis=1
         )
-        st.subheader(f"Top {len(overall)} upcoming fixture picks (up to 12)")
+        st.subheader(f"Top {len(overall)} mixed-feature fixture picks (up to 12)")
         st.caption(
-            "One strongest selection per fixture, ranked by adjusted estimate. This summary can include picks "
-            f"below the {confidence_floor:.0%} feature-list filter so more available games appear. When a feature has at least "
+            "One selection per fixture, balanced across available feature groups and favoring higher adjusted estimates. "
+            "A lower estimate may appear to keep a mix of feature types. This summary can include picks below "
+            f"the {confidence_floor:.0%} feature-list filter. When a feature has at least "
             f"{CALIBRATION_MIN_SAMPLES} completed forecasts with varied confidence and both outcomes, its probability is adjusted using prior outcomes; "
             "otherwise the model estimate is shown unchanged. Bookmaker odds do not affect this list."
         )
