@@ -48,10 +48,10 @@ def basketball_view():
 
 
 def football_view():
-    tab_picks, tab_results = st.tabs(["Football picks", "Results / performance"])
-    with tab_picks:
+    tab_pool, tab_picks, tab_results = st.tabs(["Pool draws", "Global picks", "Results"])
+    with tab_pool:
         show_pool_draws(BASE)
-        st.divider()
+    with tab_picks:
         show_football_predictions(BASE)
     with tab_results:
         show_football_feedback(BASE)

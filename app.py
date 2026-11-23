@@ -105,25 +105,27 @@ def football_view():
     tab_picks, tab_results, tab_update = st.tabs(["Football picks", "Results / performance", "Update"])
 
     with tab_picks:
-        st.caption("Fetch the newest upcoming 49-match coupon from AbleFAST, or use your own list below.")
-        if st.button("Fetch next coupon and refresh draw picks"):
-            with st.spinner("Fetching the next coupon and rating all fixtures..."):
-                output = run_script("refresh_pool.py")
-            st.code(output, language="text")
-        st.caption("Manual fallback: pool fixtures are read from pool_list.txt.")
-        if st.button("Refresh top two pool draws"):
-            with st.spinner("Resolving and rating the pool fixtures..."):
-                pool_file_output = run_script("make_pool_file.py")
-                draw_output = run_script("pool_draws.py")
-            st.code(pool_file_output + "\n" + draw_output, language="text")
-        show_pool_draws(BASE)
-        st.divider()
-        if st.button("Make football predictions"):
-            with st.spinner("Preparing the football models and predicting..."):
-                output = run_script("predict_football_today.py")
-            st.code(output, language="text")
+        tab_pool, tab_global = st.tabs(["Pool draws", "Global picks"])
+        with tab_pool:
+            st.caption("Fetch the newest upcoming 49-match coupon from AbleFAST, or use your own list below.")
+            if st.button("Fetch next coupon and refresh draw picks"):
+                with st.spinner("Fetching the next coupon and rating all fixtures..."):
+                    output = run_script("refresh_pool.py")
+                st.code(output, language="text")
+            st.caption("Manual fallback: pool fixtures are read from pool_list.txt.")
+            if st.button("Refresh top two pool draws"):
+                with st.spinner("Resolving and rating the pool fixtures..."):
+                    pool_file_output = run_script("make_pool_file.py")
+                    draw_output = run_script("pool_draws.py")
+                st.code(pool_file_output + "\n" + draw_output, language="text")
+            show_pool_draws(BASE)
 
-        show_football_predictions(BASE)
+        with tab_global:
+            if st.button("Make football predictions"):
+                with st.spinner("Preparing the football models and predicting..."):
+                    output = run_script("predict_football_today.py")
+                st.code(output, language="text")
+            show_football_predictions(BASE)
 
     with tab_results:
         show_football_feedback(BASE)

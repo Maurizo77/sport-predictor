@@ -285,7 +285,7 @@ def show_football_predictions(base):
         value=70, step=5, key="football_feature_confidence",
     ) / 100
     st.caption(
-        "Open a feature heading to see all qualifying upcoming selections ranked by confidence. "
+        "Open a feature heading to see qualifying upcoming selections ranked by confidence. "
         "One match can appear under several features. Confidence is an estimate, not a guarantee."
     )
     overall_candidates = []
@@ -297,11 +297,7 @@ def show_football_predictions(base):
                 upcoming[probability_column], errors="coerce"
             ).dropna().items():
                 raw_probability = float(probability)
-                if raw_probability < confidence_floor:
-                    continue
                 adjusted_probability = float(adjusted_probabilities[key].loc[row_index])
-                if adjusted_probability < confidence_floor:
-                    continue
                 row = upcoming.loc[row_index]
                 overall_candidates.append({
                     "DATE": row["DATE"], "LEAGUE": row["LEAGUE"],
@@ -328,12 +324,12 @@ def show_football_predictions(base):
             lambda row: f"{row['Completed feature forecasts']} scored; "
             + ("calibrated" if row["Calibration applied"] else "raw estimate used"), axis=1
         )
-        st.subheader(f"Top {len(overall)} unique high-confidence predictions")
+        st.subheader(f"Top {len(overall)} upcoming fixture picks (up to 12)")
         st.caption(
-            "One strongest selection per fixture, ranked by estimated confidence. When a feature has at least "
+            "One strongest selection per fixture, ranked by adjusted estimate. This summary can include picks "
+            f"below the {confidence_floor:.0%} feature-list filter so more available games appear. When a feature has at least "
             f"{CALIBRATION_MIN_SAMPLES} completed forecasts with varied confidence and both outcomes, its probability is adjusted using prior outcomes; "
-            f"otherwise the model estimate is shown unchanged. Only selections at or above {confidence_floor:.0%} "
-            "are included. Bookmaker odds do not affect this list."
+            "otherwise the model estimate is shown unchanged. Bookmaker odds do not affect this list."
         )
         st.dataframe(
             overall[[
@@ -343,7 +339,7 @@ def show_football_predictions(base):
             hide_index=True, use_container_width=True,
         )
     else:
-        st.info("No upcoming selection meets the current confidence filter. Lower the threshold to review more games.")
+        st.info("No upcoming fixture predictions are available.")
 
     for group, markets in FEATURE_GROUPS.items():
         selections = []
