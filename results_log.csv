@@ -99,3 +99,9 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-21,0022600277,Memphis Grizzlies @ Minnesota Timberwolves,Minnesota Timberwolves,Minnesota Timberwolves,True,0.732,227.2,199
 2026-11-21,0022600278,New Orleans Pelicans @ San Antonio Spurs,San Antonio Spurs,San Antonio Spurs,True,0.927,227.1,205
 2026-11-21,0022600279,Boston Celtics @ Sacramento Kings,Boston Celtics,Sacramento Kings,False,0.897,216.5,193
+2026-11-22,0022600280,Detroit Pistons @ Atlanta Hawks,Detroit Pistons,Atlanta Hawks,False,0.529,229.8,204
+2026-11-22,0022600281,Oklahoma City Thunder @ Miami Heat,Oklahoma City Thunder,Miami Heat,False,0.622,236.0,236
+2026-11-22,0022600282,Orlando Magic @ Washington Wizards,Orlando Magic,Washington Wizards,False,0.736,226.1,212
+2026-11-22,0022600283,Denver Nuggets @ Chicago Bulls,Denver Nuggets,Denver Nuggets,True,0.737,230.8,296
+2026-11-22,0022600284,Dallas Mavericks @ Utah Jazz,Dallas Mavericks,Dallas Mavericks,True,0.575,223.0,230
+2026-11-22,0022600285,Indiana Pacers @ New York Knicks,New York Knicks,New York Knicks,True,0.809,214.6,219
