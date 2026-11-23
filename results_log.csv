@@ -105,3 +105,4 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-22,0022600283,Denver Nuggets @ Chicago Bulls,Denver Nuggets,Denver Nuggets,True,0.737,230.8,296
 2026-11-22,0022600284,Dallas Mavericks @ Utah Jazz,Dallas Mavericks,Dallas Mavericks,True,0.575,223.0,230
 2026-11-22,0022600285,Indiana Pacers @ New York Knicks,New York Knicks,New York Knicks,True,0.809,214.6,219
+2026-11-22,0022600286,Boston Celtics @ Golden State Warriors,Boston Celtics,Golden State Warriors,False,0.7,216.2,175
