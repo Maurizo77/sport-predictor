@@ -114,3 +114,5 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-23,0022600292,Cleveland Cavaliers @ Chicago Bulls,Cleveland Cavaliers,Chicago Bulls,False,0.751,236.6,230
 2026-11-23,0022600293,Phoenix Suns @ New Orleans Pelicans,Phoenix Suns,Phoenix Suns,True,0.752,229.1,242
 2026-11-23,0022600294,LA Clippers @ Houston Rockets,Houston Rockets,Houston Rockets,True,0.791,229.7,220
+2026-11-23,0022600295,Utah Jazz @ Los Angeles Lakers,Los Angeles Lakers,Los Angeles Lakers,True,0.877,226.9,203
+2026-11-23,0022600296,San Antonio Spurs @ Sacramento Kings,San Antonio Spurs,San Antonio Spurs,True,0.878,219.8,230
