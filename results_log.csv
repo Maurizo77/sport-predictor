@@ -106,3 +106,11 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-22,0022600284,Dallas Mavericks @ Utah Jazz,Dallas Mavericks,Dallas Mavericks,True,0.575,223.0,230
 2026-11-22,0022600285,Indiana Pacers @ New York Knicks,New York Knicks,New York Knicks,True,0.809,214.6,219
 2026-11-22,0022600286,Boston Celtics @ Golden State Warriors,Boston Celtics,Golden State Warriors,False,0.7,216.2,175
+2026-11-23,0022600287,Memphis Grizzlies @ Charlotte Hornets,Charlotte Hornets,Memphis Grizzlies,False,0.556,221.1,228
+2026-11-23,0022600288,Portland Trail Blazers @ Philadelphia 76ers,Philadelphia 76ers,Portland Trail Blazers,False,0.532,231.1,239
+2026-11-23,0022600289,Oklahoma City Thunder @ Indiana Pacers,Oklahoma City Thunder,Indiana Pacers,False,0.779,226.4,245
+2026-11-23,0022600290,Milwaukee Bucks @ Toronto Raptors,Toronto Raptors,Milwaukee Bucks,False,0.772,222.4,227
+2026-11-23,0022600291,Brooklyn Nets @ Minnesota Timberwolves,Minnesota Timberwolves,Minnesota Timberwolves,True,0.856,220.3,258
+2026-11-23,0022600292,Cleveland Cavaliers @ Chicago Bulls,Cleveland Cavaliers,Chicago Bulls,False,0.751,236.6,230
+2026-11-23,0022600293,Phoenix Suns @ New Orleans Pelicans,Phoenix Suns,Phoenix Suns,True,0.752,229.1,242
+2026-11-23,0022600294,LA Clippers @ Houston Rockets,Houston Rockets,Houston Rockets,True,0.791,229.7,220
