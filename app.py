@@ -176,3 +176,30 @@ if st.button("Publish to phone link"):
 
 st.divider()
 st.caption("© 2026 " + DEVELOPER + ". All rights reserved.")
+
+
+
+
+from datetime import datetime
+import pandas as pd
+from ucl_fixtures import get_ucl_fixtures, NON_TOP_LEAGUE_ELO
+
+
+def get_team_elo(team_name, elo_dict):
+    """Return trained Elo if available, else non-top-league estimate, else 1500."""
+    if team_name in elo_dict:
+        return elo_dict[team_name]
+    return NON_TOP_LEAGUE_ELO.get(team_name, 1500)
+
+
+# After loading your domestic fixtures DataFrame (e.g., `fixtures_df`):
+today_str = datetime.now().strftime("%Y-%m-%d")
+ucl_today = get_ucl_fixtures(target_date=today_str)
+print("UCL games loaded:", len(ucl_today))
+
+
+
+
+today_str = datetime.now().strftime("%Y-%m-%d")
+ucl_today = get_ucl_fixtures(target_date=today_str)
+print("UCL games loaded:", len(ucl_today))    
