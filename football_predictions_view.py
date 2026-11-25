@@ -5,13 +5,14 @@ import pandas as pd
 import streamlit as st
 from scipy.stats import poisson
 from sklearn.isotonic import IsotonicRegression
-
+from datetime import datetime
+from ucl_fixtures import get_ucl_fixtures
 from football_feedback import FEEDBACK_FILE, build_feedback, update_feedback_file
 from football_market_features import FEATURE_GROUPS
 from event_time import FOOTBALL_FEED_TIMEZONE, NIGERIA_TIMEZONE
 
 
-LEAGUE_NAMES = {
+LEAGUE_NAMES = { "UCL"
     "E0": "England Premier League",
     "SC0": "Scotland Premiership",
     "D1": "Germany Bundesliga",
@@ -908,3 +909,48 @@ def show_football_feedback(base):
         recent_columns.append("ODDS_SOURCE")
     st.caption(f"Completed forecast record ({len(recent)} matches), newest first")
     st.dataframe(recent[recent_columns], hide_index=True, use_container_width=True)
+
+
+
+if __name__ == "__main__":
+    test_df = append_ucl_fixtures()
+    print(test_df[["Date", "Time", "League", "HomeTeam", "AwayTeam"]])
+def append_ucl_fixtures(fixtures_df=None, target_date=None):
+    """Append today's UCL fixtures to a fixtures DataFrame (or return UCL alone)."""
+    date_str = target_date or datetime.now().strftime("%Y-%m-%d")
+    ucl_df = get_ucl_fixtures(target_date=date_str)
+
+    if fixtures_df is None or fixtures_df.empty:
+        return ucl_df
+
+    if ucl_df.empty:
+        return fixtures_df
+
+    aligned = ucl_df.copy()
+    for col in fixtures_df.columns:
+        if col not in aligned.columns:
+            aligned[col] = None
+
+    return pd.concat([fixtures_df, aligned[fixtures_df.columns]], ignore_index=True)   
+def append_ucl_fixtures(fixtures_df=None, target_date=None):
+    """Append today's UCL fixtures to a fixtures DataFrame (or return UCL alone)."""
+    date_str = target_date or datetime.now().strftime("%Y-%m-%d")
+    ucl_df = get_ucl_fixtures(target_date=date_str)
+
+    if fixtures_df is None or fixtures_df.empty:
+        return ucl_df
+
+    if ucl_df.empty:
+        return fixtures_df
+
+    aligned = ucl_df.copy()
+    for col in fixtures_df.columns:
+        if col not in aligned.columns:
+            aligned[col] = None
+
+    return pd.concat([fixtures_df, aligned[fixtures_df.columns]], ignore_index=True)
+
+
+if __name__ == "__main__":
+    test_df = append_ucl_fixtures()
+    print(test_df[["Date", "Time", "League", "HomeTeam", "AwayTeam"]])
