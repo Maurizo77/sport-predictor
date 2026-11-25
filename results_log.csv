@@ -116,3 +116,5 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-23,0022600294,LA Clippers @ Houston Rockets,Houston Rockets,Houston Rockets,True,0.791,229.7,220
 2026-11-23,0022600295,Utah Jazz @ Los Angeles Lakers,Los Angeles Lakers,Los Angeles Lakers,True,0.877,226.9,203
 2026-11-23,0022600296,San Antonio Spurs @ Sacramento Kings,San Antonio Spurs,San Antonio Spurs,True,0.878,219.8,230
+2026-11-24,0022600052,Detroit Pistons @ Orlando Magic,Detroit Pistons,Detroit Pistons,True,0.635,222.9,190
+2026-11-24,0022600053,Boston Celtics @ Washington Wizards,Boston Celtics,Boston Celtics,True,0.861,219.4,247
