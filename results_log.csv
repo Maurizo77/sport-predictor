@@ -118,3 +118,4 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-23,0022600296,San Antonio Spurs @ Sacramento Kings,San Antonio Spurs,San Antonio Spurs,True,0.878,219.8,230
 2026-11-24,0022600052,Detroit Pistons @ Orlando Magic,Detroit Pistons,Detroit Pistons,True,0.635,222.9,190
 2026-11-24,0022600053,Boston Celtics @ Washington Wizards,Boston Celtics,Boston Celtics,True,0.861,219.4,247
+2026-11-24,0022600054,Dallas Mavericks @ Denver Nuggets,Denver Nuggets,Dallas Mavericks,False,0.762,228.7,221
