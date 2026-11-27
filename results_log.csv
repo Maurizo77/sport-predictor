@@ -119,3 +119,12 @@ DATE,GAME_ID,GAME,PICK,WINNER,CORRECT,CONFIDENCE,PRED_TOTAL,REAL_TOTAL
 2026-11-24,0022600052,Detroit Pistons @ Orlando Magic,Detroit Pistons,Detroit Pistons,True,0.635,222.9,190
 2026-11-24,0022600053,Boston Celtics @ Washington Wizards,Boston Celtics,Boston Celtics,True,0.861,219.4,247
 2026-11-24,0022600054,Dallas Mavericks @ Denver Nuggets,Denver Nuggets,Dallas Mavericks,False,0.762,228.7,221
+2026-11-25,0022600055,Miami Heat @ Philadelphia 76ers,Philadelphia 76ers,Philadelphia 76ers,True,0.557,238.7,215
+2026-11-25,0022600056,Chicago Bulls @ Charlotte Hornets,Charlotte Hornets,Chicago Bulls,False,0.605,227.8,212
+2026-11-25,0022600057,Cleveland Cavaliers @ New York Knicks,New York Knicks,New York Knicks,True,0.685,221.6,223
+2026-11-25,0022600058,Minnesota Timberwolves @ Oklahoma City Thunder,Oklahoma City Thunder,Minnesota Timberwolves,False,0.628,224.0,219
+2026-11-25,0022600059,LA Clippers @ Memphis Grizzlies,Memphis Grizzlies,Memphis Grizzlies,True,0.568,231.2,212
+2026-11-25,0022600060,Brooklyn Nets @ Milwaukee Bucks,Milwaukee Bucks,Brooklyn Nets,False,0.558,230.7,201
+2026-11-25,0022600061,Phoenix Suns @ Houston Rockets,Houston Rockets,Houston Rockets,True,0.698,226.6,220
+2026-11-25,0022600062,Sacramento Kings @ Golden State Warriors,Golden State Warriors,Golden State Warriors,True,0.731,218.2,239
+2026-11-25,0022600063,San Antonio Spurs @ Portland Trail Blazers,San Antonio Spurs,Portland Trail Blazers,False,0.577,222.3,227
